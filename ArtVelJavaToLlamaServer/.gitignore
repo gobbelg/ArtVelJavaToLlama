@@ -1,0 +1,51 @@
+# Ignore build output
+/bin/
+/build/
+
+# Ignore Eclipse-specific files except for .project
+#.project
+#.classpath
+.settings/
+
+# Ignore Maven and Gradle build output
+/target/
+/*.iml
+.gradle/
+/.idea/
+
+# Ignore temporary files
+*.log
+*.tmp
+*.bak
+*.swp
+
+# Ignore OS-generated files
+.DS_Store
+Thumbs.db
+
+# Ignore compiled Java files
+*.class
+
+# Ignore packaged files
+#*.jar
+#*.war
+#*.ear
+
+# Ignore personal IDE settings
+*.prefs
+
+# Ignore log files
+*.log
+
+# Ignore other backup or temporary files
+*.~*
+
+# Ignore test directories
+test/
+
+# Ignore large Stanford core jars
+stanford-core*.jar
+
+# Ignore lvg distribution jar
+lvg*.jar
+/jars/
