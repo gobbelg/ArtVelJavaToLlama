@@ -1,0 +1,89 @@
+*** SYNTHETIC EXAMPLE - NOT A REAL PATIENT - FOR TEMPLATE/TRAINING USE ONLY ***
+
+VASCULAR LABORATORY - NONINVASIVE CEREBROVASCULAR STUDY
+CAROTID/VERTEBRAL DUPLEX ULTRASOUND AND TRANSCRANIAL DOPPLER (TCD)
+
+Patient Name:      POE, EDGAR C.
+MRN:               000-00-0003 (synthetic)
+DOB / Age / Sex:   11/21/1950 / 75 / M
+Exam Date:         10/20/2026
+Referring Provider: Example, Provider MD (Neurology)
+Performing Tech:   R. Sample, RVT
+
+INDICATION: Transient left-hand weakness and left amaurosis fugax x 2 weeks.
+Diabetes, hypertension, coronary artery disease.
+
+TECHNIQUE: B-mode, color, and spectral Doppler of bilateral extracranial
+carotid and vertebral arteries, followed by transcranial Doppler via
+transtemporal, transorbital, and suboccipital windows. Image quality: fair
+(heavy calcification producing acoustic shadowing on the right).
+
+COMPARISON: None available.
+
+FINDINGS - EXTRACRANIAL:
+
+RIGHT
+  CCA:  Patent. Diffuse plaque. Dampened-appearing waveform at distal CCA.
+  Bulb/ICA: Patent. Extensive heterogeneous, ulcerated-appearing plaque with
+            calcification and shadowing at the ICA origin. Marked luminal
+            narrowing on color Doppler with high-velocity jet, aliasing,
+            and severe post-stenotic turbulence. Diameter reduction >=70%
+            but less than near-occlusion.
+  ECA:  Patent. Used as collateral; waveform has low-resistance character.
+  Vertebral: Patent, antegrade flow.
+
+LEFT
+  CCA:  Patent. Mild plaque. IMT 1.1 mm.
+  Bulb/ICA: Patent. Mild calcified plaque, <50% stenosis.
+  ECA:  Patent.
+  Vertebral: Patent, antegrade flow.
+
+VELOCITY MEASUREMENTS (cm/s)
+                      RIGHT                 LEFT
+                   PSV     EDV           PSV     EDV
+  CCA (distal)      64      12            90      22
+  ICA (proximal)   388     142           108      34
+  ICA (mid)        142      52            86      30
+  ICA (distal)      48      18            72      26
+  ECA              132      20            98      16
+  Vertebral         61      19            57      18
+
+  ICA/CCA PSV ratio:     6.06                1.20
+  Vertebral flow direction:  Antegrade       Antegrade
+
+FINDINGS - TRANSCRANIAL DOPPLER (mean flow velocity, cm/s; depth in mm)
+                              RIGHT                   LEFT
+  MCA (M1, 55 mm)          Mean 28 (low)            Mean 54 (normal)
+                           PI 0.62 (blunted)        PI 0.94
+  ACA (A1, 68 mm)          Flow reversed            Mean 46 (antegrade)
+                           (crossfilling from L)
+  PCA (P1, 62 mm)          Mean 36                  Mean 38
+  Ophthalmic (transorbital) Antegrade               Antegrade
+  Carotid siphon           Mean 30 (low)            Mean 44
+  Basilar (suboccipital)   Mean 41 (normal), antegrade
+  Vertebral (intracranial) Mean 33 antegrade        Mean 35 antegrade
+
+  Cerebral vasomotor reactivity (breath-hold index): not performed.
+  Embolic signals (HITS), 30-minute right MCA monitoring: 2 detected.
+
+IMPRESSION:
+1. RIGHT ICA: Severe (>=70%) stenosis. PSV 388 cm/s, EDV 142 cm/s, ICA/CCA
+   ratio 6.1, with marked post-stenotic turbulence. Ulcerated-appearing plaque.
+2. LEFT ICA: <50% stenosis (PSV 108 cm/s).
+3. TCD shows hemodynamic effect of right ICA disease: reduced and dampened
+   right MCA velocity, reversed right ACA (A1) flow consistent with
+   collateral crossfilling via the anterior communicating artery from the left.
+4. Two microembolic signals detected in the right MCA, suggesting an active
+   embolic source.
+5. Antegrade flow in both vertebral arteries and basilar artery.
+
+CRITICAL/URGENT RESULT: Findings communicated to Dr. Example by phone on
+10/20/2026 at 11:40 given recent symptoms concordant with the right
+hemisphere/right retinal territory.
+
+RECOMMENDATION: Urgent vascular surgery/neurology evaluation for
+revascularization (carotid endarterectomy or stenting). Confirmatory CT or MR
+angiography suggested for anatomic confirmation and exclusion of
+near-occlusion. Medical therapy per treating team.
+
+Electronically signed: A. Example, MD (synthetic)    10/20/2026 12:18

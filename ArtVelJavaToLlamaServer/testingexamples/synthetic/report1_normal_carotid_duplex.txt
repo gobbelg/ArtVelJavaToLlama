@@ -1,0 +1,57 @@
+*** SYNTHETIC EXAMPLE - NOT A REAL PATIENT - FOR TEMPLATE/TRAINING USE ONLY ***
+
+VASCULAR LABORATORY - NONINVASIVE CEREBROVASCULAR STUDY
+EXTRACRANIAL CAROTID AND VERTEBRAL DUPLEX ULTRASOUND
+
+Patient Name:      DOE, JANE A.
+MRN:               000-00-0001 (synthetic)
+DOB / Age / Sex:   03/14/1968 / 58 / F
+Exam Date:         10/12/2026
+Referring Provider: Example, Provider MD
+Performing Tech:   R. Sample, RVT
+
+INDICATION: Dizziness and family history of stroke. No prior TIA/stroke.
+
+TECHNIQUE: Real-time B-mode, color Doppler, and spectral Doppler evaluation of
+the bilateral common carotid (CCA), internal carotid (ICA), external carotid
+(ECA), and vertebral arteries using a high-frequency linear transducer.
+Image quality: good.
+
+COMPARISON: None available.
+
+FINDINGS:
+
+RIGHT
+  CCA:  Patent. Intima-media thickness 0.7 mm. No plaque.
+  Bulb/ICA: Patent. No plaque. Laminar flow with spectral window preserved.
+  ECA:  Patent, normal high-resistance waveform.
+  Vertebral: Patent, antegrade flow.
+
+LEFT
+  CCA:  Patent. Intima-media thickness 0.7 mm. No plaque.
+  Bulb/ICA: Patent. No plaque. Laminar flow with spectral window preserved.
+  ECA:  Patent, normal high-resistance waveform.
+  Vertebral: Patent, antegrade flow.
+
+VELOCITY MEASUREMENTS (cm/s)
+                      RIGHT                 LEFT
+                   PSV     EDV           PSV     EDV
+  CCA (distal)      82      21            79      20
+  ICA (proximal)    74      27            71      26
+  ICA (mid)         68      25            66      24
+  ICA (distal)      62      23            60      22
+  ECA               88      12            91      13
+  Vertebral         52      16            48      15
+
+  ICA/CCA PSV ratio:     0.90                0.90
+  Vertebral flow direction:  Antegrade       Antegrade
+
+IMPRESSION:
+1. Normal bilateral extracranial carotid duplex. No evidence of plaque or
+   hemodynamically significant stenosis (0% stenosis, bilateral ICAs).
+2. Antegrade flow in both vertebral arteries.
+
+RECOMMENDATION: No follow-up imaging needed for this indication. Manage risk
+factors clinically.
+
+Electronically signed: A. Example, MD (synthetic)    10/12/2026 14:32
