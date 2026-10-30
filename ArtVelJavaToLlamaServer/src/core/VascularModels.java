@@ -6,7 +6,7 @@ import java.util.List;
  * Revised data model aligned with the XML schema used for manually extracted
  * values. Differences from core.vascular.VascularModels:
  *   - ICA_CCA_ratio       : "notation" removed; "source_text" added.
- *   - flow_velocities     : "units" removed; "flow_direction" and "source_text" added.
+ *   - flow_velocities     : "flow_direction", "source_text" and "units" (cm/s | m/s | Other | Unspecified) added.
  *   - stenosis            : "additional_description" removed; "source_text" added.
  *   - plaque_and_intimal_thickening section removed entirely.
  *
@@ -38,7 +38,8 @@ public class VascularModels {
             String velocity_type,
             String flow_direction,
             String source_text,
-            String value
+            String value,
+            String units
     ) {}
 
     public record ModelStenosis(
@@ -67,7 +68,7 @@ public class VascularModels {
      *                        fields are then -1 / empty / "NOT_FOUND")
      * @param start_offset    index of the first character of the value text, as a
      *                        Java String (UTF-16 char) offset into the text read
-     *                        by Files.readString (line endings preserved)
+     *                        by LlamaVascularExtractor.readDocumentText (line endings preserved; BOM excluded)
      * @param end_offset      index one past the last character (exclusive), so
      *                        document.substring(start_offset, end_offset) is the
      *                        value text
@@ -118,6 +119,7 @@ public class VascularModels {
             String flow_direction,
             String source_text,
             String value,
+            String units,
             ValueLocation value_location
     ) {}
 

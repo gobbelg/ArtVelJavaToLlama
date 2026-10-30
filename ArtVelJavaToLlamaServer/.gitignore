@@ -46,6 +46,5 @@ test/
 # Ignore large Stanford core jars
 stanford-core*.jar
 
-# Ignore lvg distribution jar
-lvg*.jar
-/jars/
+# Ignore jars
+#/jars/

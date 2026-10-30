@@ -1,6 +1,7 @@
 package core;
 
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Scanner;
@@ -16,32 +17,21 @@ import core.VascularModels.VascularResult;
  * documents-per-minute. Use this to find the point at which adding concurrency
  * stops improving throughput on the NVIDIA A2.
  *
- * IMPORTANT — this tunes BOTH sides of the pipe, which must be swept together:
- *   1. Client THREADS  = the sweep value below (concurrent in-flight requests).
- *   2. Server --parallel = MUST be set to the SAME value when you start
- *      llama-server, because client threads beyond --parallel just queue on the
- *      server (no gain) and fewer starve the server's KV-cache slots.
- *   3. Server --ctx-size = N x 12288 (so every slot keeps 12288 tokens regardless
- *      of N; otherwise you are changing context per slot and concurrency at the
- *      same time and the comparison is confounded).
+ * The harness starts and stops llama-server itself (LlamaServerManager) for each
+ * value N it measures, using LlamaServerConfig.vaDefaults().withSlots(N, 12288):
+ *   - client THREADS = N = server --parallel (extra threads would only queue),
+ *   - --ctx-size = N x 12288, so every slot keeps 12288 tokens regardless of N
+ *     (otherwise context per slot and concurrency change together and the
+ *     comparison is confounded).
+ * Watch VRAM while it runs: nvidia-smi --query-gpu=utilization.gpu,memory.used
+ * --format=csv -l 2   (keep it under the ~15 GB ceiling).
  *
- * Because --parallel is a server START-UP flag, it cannot be changed from Java
- * while the server runs. The practical procedure is therefore:
+ * Pass values as program arguments (e.g. "3") to measure only those; with no
+ * arguments SWEEP_VALUES is used. The server must NOT already be running on the
+ * configured port (the manager refuses to start in that case).
  *
- *   for N in {2,3,4}:
- *     (a) (re)start llama-server with --parallel N --ctx-size (N x 12288)
- *     (b) run this harness restricted to the single value N
- *         (pass N as a program argument, e.g. "3")
- *     (c) record the documents/min it prints
- *   pick the N with the best documents/min that stays within the ~15 GB VRAM
- *   ceiling (watch: nvidia-smi --query-gpu=utilization.gpu,memory.used
- *   --format=csv -l 2).
- *
- * If you pass NO argument, the harness will sweep SWEEP_VALUES in one run. Only
- * do that if the server was started with --parallel >= max(SWEEP_VALUES); the
- * lower settings will still be measured correctly (they simply under-use the
- * available slots), but the comparison is less clean than restarting the server
- * to match each N. For the most accurate result, prefer the per-N procedure above.
+ * Documents longer than the slot budget are skipped (reported separately), so
+ * every setting is measured on the same documents only if none are skipped.
  *
  * Failed documents are counted and reported but do not abort the sweep. If any
  * documents fail at a setting, its docs/min is not directly comparable with the
@@ -66,16 +56,17 @@ public class VascularThroughputHarness {
     // warm-up, first-request connection setup) do not skew the measurement.
     private static final boolean WARM_UP = true;
 
-    private static final String SERVER_URL = "http://localhost:8080";
     private static final String MODEL_NAME = "local-model";
+
+    // Tokens per slot held constant across the sweep.
+    private static final int SLOT_SIZE = 12288;
 
     public static void main(String[] args) throws Exception {
 
-        String corpusDir;
-        try (Scanner scanner = new Scanner(System.in)) {
-            System.out.print("Enter the corpus directory path to sample from: ");
-            corpusDir = scanner.nextLine().trim();
-        }
+        // Not closed on purpose: closing a Scanner also closes System.in.
+        Scanner scanner = new Scanner(System.in);
+        System.out.print("Enter the corpus directory path to sample from: ");
+        String corpusDir = scanner.nextLine().trim();
 
         // Determine which THREADS values to measure.
         int[] sweep;
@@ -99,53 +90,68 @@ public class VascularThroughputHarness {
         List<Path> sample = new ArrayList<>(allDocs.subList(0, sampleSize));
         Path warmUpDoc = sample.get(0);
 
-        LlamaVascularExtractor extractor =
-                new LlamaVascularExtractor(SERVER_URL, MODEL_NAME, MainVascular.SYSTEM_PROMPT);
-
         System.out.println("Throughput sweep");
         System.out.println("  Sample size:       " + sampleSize + " documents");
         System.out.println("  Warm-up per run:   " + WARM_UP);
         System.out.println("  THREADS values:    " + java.util.Arrays.toString(sweep));
-        System.out.println("  REMINDER: start llama-server with --parallel equal to the");
-        System.out.println("            THREADS value being measured and --ctx-size = N x 12288.");
+        System.out.println("  The server is started automatically for each value (--parallel N,");
+        System.out.println("  --ctx-size = N x " + SLOT_SIZE + ").");
         System.out.println();
 
         List<String> summaryRows = new ArrayList<>();
         summaryRows.add(String.format("%-10s %-10s %-10s %-16s %-14s",
                 "THREADS", "ok", "failed", "elapsed(min)", "docs/min"));
+        Path serverLog = Paths.get(corpusDir).toAbsolutePath().resolve("harness_server.log");
 
         for (int threads : sweep) {
-            System.out.println("=== Measuring THREADS = " + threads
-                    + "  (ensure server --parallel = " + threads + ") ===");
+            LlamaServerConfig config = LlamaServerConfig.vaDefaults().withSlots(threads, SLOT_SIZE);
+            System.out.println("=== Measuring THREADS = " + threads + "  (" + config.describe() + ") ===");
 
-            if (WARM_UP) {
-                try {
-                    extractor.analyzeDocument(warmUpDoc); // discarded
-                } catch (Exception e) {
-                    System.err.println("Warm-up failed (continuing): " + e.getMessage());
+            try (LlamaServerManager server = new LlamaServerManager(config, serverLog)) {
+                server.start();
+
+                LlamaVascularExtractor extractor = new LlamaVascularExtractor(
+                        server.baseUrl(), MODEL_NAME, MainVascular.SYSTEM_PROMPT, server.slotSize());
+
+                if (WARM_UP) {
+                    try {
+                        extractor.analyzeDocument(warmUpDoc); // discarded
+                    } catch (Exception e) {
+                        System.err.println("Warm-up failed (continuing): " + e.getMessage());
+                    }
                 }
+
+                AtomicInteger failed = new AtomicInteger(0);
+                AtomicInteger skipped = new AtomicInteger(0);
+
+                long begin = System.currentTimeMillis();
+                List<VascularResult> results = extractor.analyzeDocumentsParallel(
+                        sample, threads,
+                        r -> { /* result discarded; only timing is measured */ },
+                        (path, e) -> {
+                            if (e instanceof ContextBudget.DocumentTooLongException) {
+                                skipped.incrementAndGet();
+                                System.out.println("  SKIPPED (too long) " + path.getFileName());
+                            } else {
+                                failed.incrementAndGet();
+                                System.err.println("  FAILED " + path.getFileName() + ": " + e.getMessage());
+                            }
+                        });
+                long elapsedMs = System.currentTimeMillis() - begin;
+
+                double elapsedMin = elapsedMs / 60000.0;
+                double docsPerMin = results.size() / elapsedMin;
+
+                System.out.printf("  -> %d ok, %d failed, %d skipped (too long) in %.3f min  =  %.2f docs/min%n%n",
+                        results.size(), failed.get(), skipped.get(), elapsedMin, docsPerMin);
+                System.out.println("  " + extractor.usageSummary());
+
+                summaryRows.add(String.format("%-10d %-10d %-10d %-16.3f %-14.2f",
+                        threads, results.size(), failed.get(), elapsedMin, docsPerMin));
+            } catch (Exception e) {
+                System.err.println("  Could not measure THREADS = " + threads + ": " + e.getMessage());
+                summaryRows.add(String.format("%-10d %-10s", threads, "server error"));
             }
-
-            AtomicInteger failed = new AtomicInteger(0);
-
-            long begin = System.currentTimeMillis();
-            List<VascularResult> results = extractor.analyzeDocumentsParallel(
-                    sample, threads,
-                    r -> { /* result discarded; only timing is measured */ },
-                    (path, e) -> {
-                        failed.incrementAndGet();
-                        System.err.println("  FAILED " + path.getFileName() + ": " + e.getMessage());
-                    });
-            long elapsedMs = System.currentTimeMillis() - begin;
-
-            double elapsedMin = elapsedMs / 60000.0;
-            double docsPerMin = results.size() / elapsedMin;
-
-            System.out.printf("  -> %d ok, %d failed in %.3f min  =  %.2f docs/min%n%n",
-                    results.size(), failed.get(), elapsedMin, docsPerMin);
-
-            summaryRows.add(String.format("%-10d %-10d %-10d %-16.3f %-14.2f",
-                    threads, results.size(), failed.get(), elapsedMin, docsPerMin));
         }
 
         System.out.println("================ SUMMARY ================");

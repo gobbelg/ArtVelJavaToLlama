@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Scanner;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -29,31 +30,35 @@ public class MainVascular {
 	private static final String DOCUMENT_EXTENSION = ".txt";
 
 	// -------------------------------------------------------------------------
-	// THROUGHPUT TUNING PARAMETER (TEST THIS)
+	// SERVER AND PASS SETTINGS
 	// -------------------------------------------------------------------------
-	// THREADS is the number of concurrent in-flight HTTP requests to the
-	// llama.cpp server. It MUST equal the server's --parallel value: higher than
-	// --parallel just queues requests server-side (no gain); lower leaves the
-	// server's KV-cache slots idle.
+	// This program starts and stops llama-server itself (LlamaServerManager),
+	// using LlamaServerConfig.vaDefaults(), which reproduces the command line
+	// you used to launch it by hand. Edit paths and flags there.
 	//
-	// Recommended starting pair (each slot gets --ctx-size / --parallel tokens):
+	// For every pass, client threads = server slots (--parallel). More threads
+	// than slots only queue on the server; fewer leave slots idle.
 	//
-	//   llama-server.exe --host 127.0.0.1 --port 8080 --model "<path>.gguf"
-	//       --n-gpu-layers 999 --ctx-size 49152 --parallel 4 --cont-batching
-	//       --batch-size 2048 --ubatch-size 512 --flash-attn on --threads 12
-	//       --mlock   (12288 tokens per slot)
+	// Slot size = --ctx-size / --parallel, so with --ctx-size fixed at 49152:
+	//     --parallel 4 -> 12288 tokens per slot   (first pass)
+	//     --parallel 1 -> 49152 tokens per slot   (second pass)
+	// The KV-cache (VRAM) cost is the same either way; only concurrency changes.
 	//
-	//   THREADS = 4   (this constant)
-	//
-	// The GPU (NVIDIA A2), not the CPU, is the bottleneck. Use
-	// VascularThroughputHarnessRevised (RUN_THROUGHPUT_SWEEP) to compare
-	// --parallel/THREADS = 2, 3 and 4 (restart the server for each, keeping
-	// --ctx-size = N x 12288), and keep the value where aggregate documents/minute
-	// stops improving. Watch `nvidia-smi --query-gpu=utilization.gpu,memory.used
-	// --format=csv -l 2` under load: if GPU-Util pins near 100%, more slots
-	// won't help; if memory.used nears the ~15 GB ceiling, back off.
+	// Reports too long for the first-pass slot size (see ContextBudget) are
+	// skipped, not failed. If AUTO_SECOND_PASS is true, the server is restarted
+	// with SECOND_PASS_PARALLEL slots and those reports are processed then.
+	// Anything still too long is written to <output>_too_long.txt.
 	// -------------------------------------------------------------------------
-	private static final int THREADS = 4;
+	// MODIFIED 10-29-26
+//	private static final int DEFAULT_PARALLEL = 4;
+//	private static final boolean AUTO_SECOND_PASS = true;
+//	private static final int SECOND_PASS_PARALLEL = 1;
+//	private static final String MODEL_NAME = "local-model";
+	
+	private static final int DEFAULT_PARALLEL = 1;
+	private static final boolean AUTO_SECOND_PASS = false;
+	private static final int SECOND_PASS_PARALLEL = 1;
+	private static final String MODEL_NAME = "local-model";
 
 	// -------------------------------------------------------------------------
 	// SYSTEM PROMPT — fixed instructions, schema, and worked example.
@@ -87,32 +92,46 @@ public class MainVascular {
 			report. Omit that entry entirely instead of using "InsufficientInformation" for it.
 			- If a vessel is mentioned but explicitly stated to have no measurable flow \
 			or is described as occluded, use the string "NoMeasurableFlow" as the value. \
-			For such an entry use velocity_type "PSV" unless the report specifies EDV.
+			For such an entry use the velocity_type stated in the report, or "Unspecified" if it is not stated, and use "Unspecified" for units.
 			- Do not infer or estimate values. Only extract values explicitly stated.
 			- Laterality must be recorded for every entry. If laterality is \
 			ambiguous or unstated, use "InsufficientInformation".
 			- Velocity values must preserve the numeric value exactly as stated in the \
 			report. Do not convert units and do not include units in the value.
-			- velocity_type must be "PSV" or "EDV" (acronyms for peak systolic velocity \
+			- velocity_type must be "PSV", "EDV", or "Unspecified" (acronyms for peak systolic velocity \
 			and end diastolic velocity, respectively). If the report does not state whether a \
-			velocity is PSV or EDV, use "PSV".
-			- flow_direction must be "anterograde" or "retrograde". Use "retrograde" only if \
+			velocity is PSV or EDV, use "Unspecified". Do not guess.
+			- flow_direction must be "anterograde", "retrograde", or "Unspecified". Use "retrograde" only if \
 			the report explicitly describes retrograde, reversed, or reverse flow for that \
-			measurement. If the flow direction is not stated in the report, use "anterograde".
-			- Vessel location (proximal, mid, or distal) must be recorded for every velocity \
+			measurement. Use "anterograde" only if the report explicitly describes antegrade or anterograde flow for \
+			that measurement. If the flow direction is not stated in the report, use "Unspecified".
+			- Vessel location (proximal, mid, distal, bulb, or bifurcation) must be recorded for every velocity \
 			measurement. If the portion of the vessel is not stated, use "InsufficientInformation". \
 			If measurements are reported at more than one location on the same vessel, each \
 			location must be reported as a separate entry in the array.
 			- Stenosis values must preserve the exact percentage or range stated \
 			(e.g., "60-69%", "<50%", "70%").
+			- Extract values ONLY for the ICA, ECA, and CCA. Ignore every other vessel (for example the \
+			vertebral, subclavian, innominate/brachiocephalic, basilar, and intracranial arteries). Do not create \
+			entries for them and do not relabel their values as ICA, ECA, or CCA.
+			- units (flow_velocities only) must be "cm/s", "m/s", "Other", or "Unspecified". Use "cm/s" or \
+			"m/s" when the report states that unit for the measurement, "Other" when a different unit is stated, \
+			and "Unspecified" when no unit is stated. Do not convert units, and do not put the unit in value.
 			- Extract ONLY the ICA/CCA ratio, flow velocities, and stenosis. Ignore plaque, \
 			intimal thickening, and all other findings.
-			- source_text must be copied CHARACTER-FOR-CHARACTER from the report: a short excerpt \
-			(roughly 15 to 40 characters, normally within one line) that contains the extracted \
-			value exactly as written, plus a few neighboring words such as the vessel name or the \
-			PSV/EDV label. Do not paraphrase, reorder, correct, abbreviate, or reformat it, and do \
-			not add or remove spaces or punctuation. Choose the excerpt so that it is as specific \
-			as possible to this measurement. Every entry must include source_text.
+			- source_text must be copied CHARACTER-FOR-CHARACTER from the report: an excerpt that \
+			contains the extracted value exactly as written, plus neighboring words such as the vessel \
+			name or the PSV/EDV label. Do not paraphrase, reorder, correct, abbreviate, or reformat it, \
+			and do not add or remove spaces or punctuation. Every entry must include source_text.
+			- source_text must be UNIQUE: the exact excerpt must occur only ONCE in the report. Reports \
+			often repeat identical text, for example the same line "CCA: PSV 82 cm/s" under both the RIGHT \
+			and the LEFT heading. Before finalizing each source_text, check whether the same text occurs \
+			anywhere else in the report. If it does, make the excerpt longer until it occurs exactly once: \
+			usually extend it backward to include the side heading (for example "RIGHT SIDE:" or "LEFT") or \
+			the preceding line, or forward to the next distinguishing words. The excerpt must stay one \
+			contiguous piece of the report and may span line breaks (copy the line breaks exactly as \
+			written, as \\n in JSON). Keep it as short as uniqueness allows: typically 15 to 40 \
+			characters, and no more than about 120 characters.
 			- Use empty arrays [] for sections with no findings.
 			- For unilateral studies, include entries only for the documented side.
 
@@ -124,7 +143,7 @@ public class MainVascular {
 			  "ICA_CCA_ratio": [
 			    {
 			      "laterality": "Left | Right | InsufficientInformation",
-			      "source_text": "<short excerpt copied verbatim from the report that contains the ratio value>",
+			      "source_text": "<excerpt copied verbatim from the report that contains the ratio value and occurs only once in the report>",
 			      "ratio_value": "<numeric value as string>"
 			    }
 			  ],
@@ -132,18 +151,19 @@ public class MainVascular {
 			    {
 			      "vessel": "ICA | ECA | CCA",
 			      "laterality": "Left | Right | InsufficientInformation",
-			      "vessel_location": "proximal | mid | distal | InsufficientInformation",
-			      "velocity_type": "PSV | EDV",
-			      "flow_direction": "anterograde | retrograde",
-			      "source_text": "<short excerpt copied verbatim from the report that contains the velocity value>",
-			      "value": "<numeric value as string, or NoMeasurableFlow>"
+			      "vessel_location": "proximal | mid | distal | bulb | bifurcation | InsufficientInformation",
+			      "velocity_type": "PSV | EDV | Unspecified",
+			      "flow_direction": "anterograde | retrograde | Unspecified",
+			      "source_text": "<excerpt copied verbatim from the report that contains the velocity value and occurs only once in the report>",
+			      "value": "<numeric value as string, or NoMeasurableFlow>",
+			      "units": "cm/s | m/s | Other | Unspecified"
 			    }
 			  ],
 			  "stenosis": [
 			    {
 			      "vessel": "ICA | ECA | CCA",
 			      "laterality": "Left | Right | InsufficientInformation",
-			      "source_text": "<short excerpt copied verbatim from the report that contains the percentage>",
+			      "source_text": "<excerpt copied verbatim from the report that contains the percentage and occurs only once in the report>",
 			      "percentage": "<exact value or range as stated>"
 			    }
 			  ]
@@ -155,14 +175,15 @@ public class MainVascular {
 			CCA: PSV 82 cm/s, EDV 24 cm/s. No plaque.
 			ICA: Proximal ICA PSV 124 cm/s, EDV 42 cm/s. Distal ICA PSV 98 cm/s, EDV 31 cm/s. ICA/CCA ratio: 1.5. Mild plaque proximal ICA. Stenosis 40-59%.
 			ECA: PSV 96 cm/s.
+			Vertebral artery: PSV 55 cm/s, antegrade flow.
 			LEFT SIDE:
-			CCA: PSV 78 cm/s, EDV 22 cm/s. Mild intimal thickening mid CCA.
+			CCA: PSV 82 cm/s, EDV 24 cm/s. Mild intimal thickening mid CCA.
 			ICA: PSV 310 cm/s, EDV 115 cm/s. ICA/CCA ratio: 3.97. Dense calcified plaque at bifurcation. Stenosis 70-79%.
 			ECA: PSV 110 cm/s with retrograde flow.
 			>>>
 
 			Example output:
-			{"ICA_CCA_ratio":[{"laterality":"Right","source_text":"ICA/CCA ratio: 1.5","ratio_value":"1.5"},{"laterality":"Left","source_text":"ICA/CCA ratio: 3.97","ratio_value":"3.97"}],"flow_velocities":[{"vessel":"CCA","laterality":"Right","vessel_location":"InsufficientInformation","velocity_type":"PSV","flow_direction":"anterograde","source_text":"CCA: PSV 82 cm/s","value":"82"},{"vessel":"CCA","laterality":"Right","vessel_location":"InsufficientInformation","velocity_type":"EDV","flow_direction":"anterograde","source_text":"PSV 82 cm/s, EDV 24 cm/s","value":"24"},{"vessel":"ICA","laterality":"Right","vessel_location":"proximal","velocity_type":"PSV","flow_direction":"anterograde","source_text":"Proximal ICA PSV 124 cm/s","value":"124"},{"vessel":"ICA","laterality":"Right","vessel_location":"proximal","velocity_type":"EDV","flow_direction":"anterograde","source_text":"PSV 124 cm/s, EDV 42 cm/s","value":"42"},{"vessel":"ICA","laterality":"Right","vessel_location":"distal","velocity_type":"PSV","flow_direction":"anterograde","source_text":"Distal ICA PSV 98 cm/s","value":"98"},{"vessel":"ICA","laterality":"Right","vessel_location":"distal","velocity_type":"EDV","flow_direction":"anterograde","source_text":"PSV 98 cm/s, EDV 31 cm/s","value":"31"},{"vessel":"ECA","laterality":"Right","vessel_location":"InsufficientInformation","velocity_type":"PSV","flow_direction":"anterograde","source_text":"ECA: PSV 96 cm/s","value":"96"},{"vessel":"CCA","laterality":"Left","vessel_location":"InsufficientInformation","velocity_type":"PSV","flow_direction":"anterograde","source_text":"CCA: PSV 78 cm/s","value":"78"},{"vessel":"CCA","laterality":"Left","vessel_location":"InsufficientInformation","velocity_type":"EDV","flow_direction":"anterograde","source_text":"PSV 78 cm/s, EDV 22 cm/s","value":"22"},{"vessel":"ICA","laterality":"Left","vessel_location":"InsufficientInformation","velocity_type":"PSV","flow_direction":"anterograde","source_text":"ICA: PSV 310 cm/s","value":"310"},{"vessel":"ICA","laterality":"Left","vessel_location":"InsufficientInformation","velocity_type":"EDV","flow_direction":"anterograde","source_text":"PSV 310 cm/s, EDV 115 cm/s","value":"115"},{"vessel":"ECA","laterality":"Left","vessel_location":"InsufficientInformation","velocity_type":"PSV","flow_direction":"retrograde","source_text":"ECA: PSV 110 cm/s with retrograde flow","value":"110"}],"stenosis":[{"vessel":"ICA","laterality":"Right","source_text":"Stenosis 40-59%","percentage":"40-59%"},{"vessel":"ICA","laterality":"Left","source_text":"Stenosis 70-79%","percentage":"70-79%"}]}
+			{"ICA_CCA_ratio":[{"laterality":"Right","source_text":"ICA/CCA ratio: 1.5","ratio_value":"1.5"},{"laterality":"Left","source_text":"ICA/CCA ratio: 3.97","ratio_value":"3.97"}],"flow_velocities":[{"vessel":"CCA","laterality":"Right","vessel_location":"InsufficientInformation","velocity_type":"PSV","flow_direction":"Unspecified","source_text":"RIGHT SIDE:\\nCCA: PSV 82 cm/s","value":"82","units":"cm/s"},{"vessel":"CCA","laterality":"Right","vessel_location":"InsufficientInformation","velocity_type":"EDV","flow_direction":"Unspecified","source_text":"RIGHT SIDE:\\nCCA: PSV 82 cm/s, EDV 24 cm/s","value":"24","units":"cm/s"},{"vessel":"ICA","laterality":"Right","vessel_location":"proximal","velocity_type":"PSV","flow_direction":"Unspecified","source_text":"Proximal ICA PSV 124 cm/s","value":"124","units":"cm/s"},{"vessel":"ICA","laterality":"Right","vessel_location":"proximal","velocity_type":"EDV","flow_direction":"Unspecified","source_text":"PSV 124 cm/s, EDV 42 cm/s","value":"42","units":"cm/s"},{"vessel":"ICA","laterality":"Right","vessel_location":"distal","velocity_type":"PSV","flow_direction":"Unspecified","source_text":"Distal ICA PSV 98 cm/s","value":"98","units":"cm/s"},{"vessel":"ICA","laterality":"Right","vessel_location":"distal","velocity_type":"EDV","flow_direction":"Unspecified","source_text":"PSV 98 cm/s, EDV 31 cm/s","value":"31","units":"cm/s"},{"vessel":"ECA","laterality":"Right","vessel_location":"InsufficientInformation","velocity_type":"PSV","flow_direction":"Unspecified","source_text":"ECA: PSV 96 cm/s","value":"96","units":"cm/s"},{"vessel":"CCA","laterality":"Left","vessel_location":"InsufficientInformation","velocity_type":"PSV","flow_direction":"Unspecified","source_text":"LEFT SIDE:\\nCCA: PSV 82 cm/s","value":"82","units":"cm/s"},{"vessel":"CCA","laterality":"Left","vessel_location":"InsufficientInformation","velocity_type":"EDV","flow_direction":"Unspecified","source_text":"LEFT SIDE:\\nCCA: PSV 82 cm/s, EDV 24 cm/s","value":"24","units":"cm/s"},{"vessel":"ICA","laterality":"Left","vessel_location":"InsufficientInformation","velocity_type":"PSV","flow_direction":"Unspecified","source_text":"ICA: PSV 310 cm/s","value":"310","units":"cm/s"},{"vessel":"ICA","laterality":"Left","vessel_location":"InsufficientInformation","velocity_type":"EDV","flow_direction":"Unspecified","source_text":"PSV 310 cm/s, EDV 115 cm/s","value":"115","units":"cm/s"},{"vessel":"ECA","laterality":"Left","vessel_location":"InsufficientInformation","velocity_type":"PSV","flow_direction":"retrograde","source_text":"ECA: PSV 110 cm/s with retrograde flow","value":"110","units":"cm/s"}],"stenosis":[{"vessel":"ICA","laterality":"Right","source_text":"Stenosis 40-59%","percentage":"40-59%"},{"vessel":"ICA","laterality":"Left","source_text":"Stenosis 70-79%","percentage":"70-79%"}]}
 			""";
 
 	// -------------------------------------------------------------------------
@@ -172,139 +193,278 @@ public class MainVascular {
 	public static void main(String[] args) throws Exception {
 		ObjectMapper mapper = new ObjectMapper();
 
-		Path outputFile = getOutputFile();
+		// One Scanner for every console prompt. It is deliberately NOT closed:
+		// closing a Scanner on System.in also closes System.in itself.
+		Scanner scanner = new Scanner(System.in);
+
+		Path outputFile = getOutputFile(scanner);
+
+		List<Path> documentPaths;
+		try {
+			documentPaths = getDocumentPaths(scanner);
+		} catch (IOException | IllegalArgumentException e) {
+			System.err.println("Unable to load the documents to process: " + e.getLocalizedMessage());
+			e.printStackTrace();
+			System.exit(-1);
+			return;
+		}
+		int firstPassParallel = getParallel(scanner);
+
+		// --- Resume: skip documents already recorded in an existing output file ---
+		// Only successfully processed documents are in that file, so documents that
+		// failed or were too long on an earlier run are picked up again. Re-running
+		// with the SAME output file name (answer N to the timestamp prompt) therefore
+		// never duplicates records.
+		if (Files.exists(outputFile) && Files.size(outputFile) > 0) {
+			if (askYesNo(scanner, "The output file already contains results. Skip documents already "
+					+ "recorded in it (Y/N) [Y]: ", true)) {
+				Set<String> alreadyDone = ResumeSupport.loadProcessedPaths(outputFile, mapper, System.out::println);
+				int before = documentPaths.size();
+				documentPaths = documentPaths.stream()
+						.filter(p -> !alreadyDone.contains(ResumeSupport.normalize(p.toString())))
+						.collect(Collectors.toList());
+				System.out.println("Skipping " + (before - documentPaths.size()) + " of " + before
+						+ " documents already in the output file; " + documentPaths.size() + " to process.");
+				if (documentPaths.isEmpty()) {
+					System.out.println("Nothing to do.");
+					return;
+				}
+			}
+		}
 
 		// --- Set up synchronized writer (append mode) ---
 		PrintWriter resultWriter = new PrintWriter(new BufferedWriter(
 				new OutputStreamWriter(new FileOutputStream(outputFile.toFile(), true), StandardCharsets.UTF_8)));
 
-		Path logFile = getLogFile(outputFile);
-
 		// --- Set up synchronized logger (append mode) ---
+		Path logFile = getLogFile(outputFile);
 		PrintWriter logger = new PrintWriter(new BufferedWriter(
 				new OutputStreamWriter(new FileOutputStream(logFile.toFile(), true), StandardCharsets.UTF_8)));
 
-		Object writeLock = new Object();
+		// llama-server's own console output is appended to this file.
+		Path serverLogFile = getSiblingFile(outputFile, "_server.log");
 
 		// --- Set up the three tab-delimited result files (append mode) ---
 		// <output>_ICA_CCA_ratio.tsv, <output>_flow_velocities.tsv, <output>_stenosis.tsv
 		VascularTsvWriter tsvWriter = new VascularTsvWriter(outputFile);
 		tsvWriter.getFiles().forEach(f -> System.out.println("Tab-delimited results: " + f.toAbsolutePath()));
 
-		// Shared progress counter: incremented once per document that has finished
-		// processing, whether it succeeded or failed, so progress and the ETA stay
-		// accurate even when some documents fail. AtomicInteger keeps it correct
-		// with THREADS > 1.
-		AtomicInteger documentNumber = new AtomicInteger(0);
-
-		// Documents that failed (guarded by writeLock). A failure on one document
-		// no longer aborts the run; failed paths are written to a re-run list at
-		// the end.
-		List<Path> failedDocuments = new ArrayList<>();
-
-		// --- Build extractor and run ---
-		LlamaVascularExtractor extractor = new LlamaVascularExtractor("http://localhost:8080", "local-model",
-				SYSTEM_PROMPT);
+		RunContext ctx = new RunContext(mapper, resultWriter, logger, tsvWriter);
 
 		try {
-			List<Path> documentPaths = getFilePaths(CORPUS_DIRECTORY_PATH, false);
-			int totalDocs = documentPaths.size();
-
 			long beginTime = System.currentTimeMillis();
-			System.out.println("Begin processing: " + beginTime + " (" + totalDocs + " documents, THREADS=" + THREADS + ")");
+			ctx.log("Begin processing: " + beginTime + " (" + documentPaths.size() + " documents)");
 
-			extractor.analyzeDocumentsParallel(documentPaths, THREADS, result -> {
-				String json;
-				try {
-					json = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(result);
-				} catch (Exception e) {
-					// Counts as a failure so the document appears in the re-run list.
-					throw new RuntimeException("Failed to serialize result for: "
-							+ result.documentPathString() + " — " + e.getMessage(), e);
-				}
-				synchronized (writeLock) {
-					int current = documentNumber.incrementAndGet();
+			// Documents still to do. After each pass this becomes the list of
+			// documents that were too long for that pass's slot size.
+			List<Path> pending = documentPaths;
+			List<Path> failedDocuments = new ArrayList<>();
+			int succeeded = 0;
+			int parallel = firstPassParallel;
+			int pass = 1;
+			boolean aborted = false;
 
-					resultWriter.println(json);
-					resultWriter.println(); // blank line between records
-					resultWriter.flush();
+			try {
+				while (!pending.isEmpty()) {
+					PassResult passResult = runPass(ctx, pass, parallel, pending, serverLogFile);
+					succeeded += passResult.succeeded;
+					failedDocuments.addAll(passResult.failed);
+					pending = passResult.tooLong;
 
-					// Tab-delimited files. A failure here must not mark the document
-					// as failed (its JSON is already written), so log and continue.
-					try {
-						tsvWriter.write(result);
-					} catch (Exception tsvException) {
-						String msg = "Failed to write tab-delimited rows for "
-								+ result.documentPathString() + ": " + tsvException.getMessage();
-						System.err.println(msg);
-						logger.println(msg);
-						logger.flush();
+					if (pending.isEmpty() || !AUTO_SECOND_PASS || parallel <= SECOND_PASS_PARALLEL) {
+						break;
 					}
-
-					StringBuilder sb = new StringBuilder();
-					sb.append("Result written for document ").append(current).append(" of ")
-							.append(totalDocs).append(" documents ").append("\n");
-					sb.append("\tFileName: ").append(Paths.get(result.documentPathString()).getFileName()).append("\n");
-					double remainingTimeEstimate = estimateRemainingProcessingTime(current, totalDocs, beginTime);
-					sb.append(String.format("Estimated remaining processing time: %.2f min%n", remainingTimeEstimate));
-
-					System.out.println(sb.toString());
-					logger.println(sb.toString());
-					logger.flush();
+					ctx.log(pending.size() + " document(s) were too long for the current slot size; "
+							+ "restarting the server with --parallel " + SECOND_PASS_PARALLEL + " for a second pass.");
+					parallel = SECOND_PASS_PARALLEL;
+					pass++;
 				}
-			}, (path, e) -> {
-				synchronized (writeLock) {
-					int current = documentNumber.incrementAndGet();
-					failedDocuments.add(path);
-
-					StringBuilder sb = new StringBuilder();
-					sb.append("FAILED document ").append(current).append(" of ").append(totalDocs)
-							.append(" documents ").append("\n");
-					sb.append("\tFileName: ").append(path.getFileName()).append("\n");
-					sb.append("\tError: ").append(e.getMessage()).append("\n");
-					double remainingTimeEstimate = estimateRemainingProcessingTime(current, totalDocs, beginTime);
-					sb.append(String.format("Estimated remaining processing time: %.2f min%n", remainingTimeEstimate));
-
-					System.err.println(sb.toString());
-					logger.println(sb.toString());
-					logger.flush();
-				}
-			});
-
-			long endTime = System.currentTimeMillis();
-
-			System.out.println("End processing: " + endTime);
-			System.out.printf("Total processing time: %.2f min%n", (endTime - beginTime) / 60000.0);
-
-			synchronized (writeLock) {
-				int failures = failedDocuments.size();
-				String summary = "Succeeded: " + (totalDocs - failures) + "  Failed: " + failures;
-				System.out.println(summary);
-				logger.println(summary);
-
-				if (failures > 0) {
-					Path failedListFile = getFailedListFile(outputFile);
-					Files.write(failedListFile,
-							failedDocuments.stream().map(Path::toString).collect(Collectors.toList()),
-							StandardCharsets.UTF_8);
-					String msg = "List of failed documents written to: " + failedListFile.toAbsolutePath();
-					System.out.println(msg);
-					logger.println(msg);
-				}
-				logger.flush();
+			} catch (Exception e) {
+				// Typically the server could not be started. Documents of a pass
+				// that was interrupted may already have results; check the outputs.
+				aborted = true;
+				ctx.log("RUN ABORTED during pass " + pass + ": " + e.getMessage());
+				e.printStackTrace();
 			}
 
-		} catch (IOException e) {
-			System.err.println("Unable to load files from " + CORPUS_DIRECTORY_PATH);
-			System.err.println(e.getLocalizedMessage());
-			e.printStackTrace();
-			System.exit(-1);
+			long endTime = System.currentTimeMillis();
+			ctx.log("End processing: " + endTime);
+			ctx.log(String.format("Total processing time: %.2f min", (endTime - beginTime) / 60000.0));
+
+			List<Path> tooLongDocuments = aborted ? new ArrayList<>() : pending;
+			List<Path> notProcessed = aborted ? pending : new ArrayList<>();
+
+			ctx.log("Succeeded: " + succeeded + "  Failed: " + failedDocuments.size()
+					+ "  Too long for the largest slot size used: " + tooLongDocuments.size()
+					+ (aborted ? "  Not processed (run aborted): " + notProcessed.size() : ""));
+
+			// Documents-file rows for documents that never produced a result.
+			for (Path p : tooLongDocuments) {
+				tsvWriter.writeStatus(p.toString(), "TOO_LONG", pass, "",
+						"Longer than the largest slot size used in this run");
+			}
+			for (Path p : notProcessed) {
+				tsvWriter.writeStatus(p.toString(), "NOT_PROCESSED", pass, "",
+						"The run aborted before this document was reached");
+			}
+
+			writeList(ctx, getSiblingFile(outputFile, "_failed.txt"), failedDocuments,
+					"Failed documents");
+			writeList(ctx, getSiblingFile(outputFile, "_too_long.txt"), tooLongDocuments,
+					"Documents too long even for the largest slot size used (re-run them with a "
+							+ "smaller parallel value, or shorten them)");
+			writeList(ctx, getSiblingFile(outputFile, "_not_processed.txt"), notProcessed,
+					"Documents not processed because the run aborted (may include documents of the "
+							+ "interrupted pass that already have results)");
 		} finally {
 			resultWriter.close();
 			tsvWriter.close();
 			logger.close();
 		}
+	}
 
+	// -------------------------------------------------------------------------
+	// One pass: start the server with the given slot count, process documents,
+	// stop the server. Too-long documents are returned, not treated as failures.
+	// -------------------------------------------------------------------------
+
+	private static PassResult runPass(RunContext ctx, int pass, int parallel, List<Path> documents,
+			Path serverLogFile) throws Exception {
+
+		// --ctx-size stays at the configured total; fewer slots means larger slots.
+		LlamaServerConfig config = LlamaServerConfig.vaDefaults().withParallel(parallel);
+		final int totalDocs = documents.size();
+		ctx.log("=== Pass " + pass + ": " + totalDocs + " documents; " + config.describe()
+				+ "; client threads = " + parallel + " ===");
+
+		List<Path> failed = new ArrayList<>();
+		List<Path> tooLong = new ArrayList<>();
+		AtomicInteger documentNumber = new AtomicInteger(0);
+		AtomicInteger succeeded = new AtomicInteger(0);
+
+		try (LlamaServerManager server = new LlamaServerManager(config, serverLogFile)) {
+			server.start();
+			final int slotSize = server.slotSize();
+
+			LlamaVascularExtractor extractor = new LlamaVascularExtractor(server.baseUrl(), MODEL_NAME,
+					SYSTEM_PROMPT, slotSize);
+			ctx.log(extractor.getBudget().describe());
+
+			final long passBegin = System.currentTimeMillis();
+
+			extractor.analyzeDocumentsParallel(documents, parallel, result -> {
+				String json;
+				try {
+					json = ctx.mapper.writerWithDefaultPrettyPrinter().writeValueAsString(result);
+				} catch (Exception e) {
+					// Counts as a failure so the document appears in the re-run list.
+					throw new RuntimeException("Failed to serialize result for: "
+							+ result.documentPathString() + " — " + e.getMessage(), e);
+				}
+				synchronized (ctx.writeLock) {
+					int current = documentNumber.incrementAndGet();
+					succeeded.incrementAndGet();
+
+					ctx.resultWriter.println(json);
+					ctx.resultWriter.println(); // blank line between records
+					ctx.resultWriter.flush();
+
+					// Tab-delimited files. A failure here must not mark the document
+					// as failed (its JSON is already written), so log and continue.
+					try {
+						ctx.tsvWriter.write(result, pass, extractor.takeNotes(result.documentPathString()));
+					} catch (Exception tsvException) {
+						String msg = "Failed to write tab-delimited rows for "
+								+ result.documentPathString() + ": " + tsvException.getMessage();
+						System.err.println(msg);
+						ctx.logger.println(msg);
+						ctx.logger.flush();
+					}
+
+					StringBuilder sb = new StringBuilder();
+					sb.append("Result written for document ").append(current).append(" of ")
+							.append(totalDocs).append(" documents (pass ").append(pass).append(")\n");
+					sb.append("\tFileName: ").append(Paths.get(result.documentPathString()).getFileName()).append("\n");
+					sb.append(String.format("Estimated remaining processing time: %.2f min%n",
+							estimateRemainingProcessingTime(current, totalDocs, passBegin)));
+
+					System.out.println(sb.toString());
+					ctx.logger.println(sb.toString());
+					ctx.logger.flush();
+				}
+			}, (path, e) -> {
+				synchronized (ctx.writeLock) {
+					int current = documentNumber.incrementAndGet();
+					boolean isTooLong = e instanceof ContextBudget.DocumentTooLongException;
+					if (isTooLong) {
+						tooLong.add(path);
+						extractor.takeNotes(path.toString());
+					} else {
+						failed.add(path);
+						ctx.tsvWriter.writeStatus(path.toString(), "FAILED", pass,
+								extractor.takeNotes(path.toString()), e.getMessage());
+					}
+
+					StringBuilder sb = new StringBuilder();
+					sb.append(isTooLong ? "SKIPPED (too long for slot size " + slotSize + ") document "
+							: "FAILED document ").append(current).append(" of ").append(totalDocs)
+							.append(" documents (pass ").append(pass).append(")\n");
+					sb.append("\tFileName: ").append(path.getFileName()).append("\n");
+					sb.append("\t").append(isTooLong ? "Reason: " : "Error: ").append(e.getMessage()).append("\n");
+					sb.append(String.format("Estimated remaining processing time: %.2f min%n",
+							estimateRemainingProcessingTime(current, totalDocs, passBegin)));
+
+					(isTooLong ? System.out : System.err).println(sb.toString());
+					ctx.logger.println(sb.toString());
+					ctx.logger.flush();
+				}
+			});
+
+			ctx.log(String.format("Pass %d finished in %.2f min: %d succeeded, %d too long for slot size %d, %d failed.",
+					pass, (System.currentTimeMillis() - passBegin) / 60000.0,
+					succeeded.get(), tooLong.size(), slotSize, failed.size()));
+			ctx.log(extractor.usageSummary());
+		} // the server is stopped here, before any next pass restarts it
+
+		return new PassResult(succeeded.get(), failed, tooLong);
+	}
+
+	// Shared state for a run. All console/log output and result writing goes
+	// through writeLock so lines from concurrent documents do not interleave.
+	private static final class RunContext {
+		final ObjectMapper mapper;
+		final PrintWriter resultWriter;
+		final PrintWriter logger;
+		final VascularTsvWriter tsvWriter;
+		final Object writeLock = new Object();
+
+		RunContext(ObjectMapper mapper, PrintWriter resultWriter, PrintWriter logger,
+				VascularTsvWriter tsvWriter) {
+			this.mapper = mapper;
+			this.resultWriter = resultWriter;
+			this.logger = logger;
+			this.tsvWriter = tsvWriter;
+		}
+
+		void log(String message) {
+			synchronized (writeLock) {
+				System.out.println(message);
+				logger.println(message);
+				logger.flush();
+			}
+		}
+	}
+
+	private static final class PassResult {
+		final int succeeded;
+		final List<Path> failed;
+		final List<Path> tooLong;
+
+		PassResult(int succeeded, List<Path> failed, List<Path> tooLong) {
+			this.succeeded = succeeded;
+			this.failed = failed;
+			this.tooLong = tooLong;
+		}
 	}
 
 	private static Path getLogFile(Path outputPath) {
@@ -316,19 +476,33 @@ public class MainVascular {
 		return outputPath.getParent().resolve(logFileName);
 	}
 
-	// e.g. results_261026_101500.json -> results_261026_101500_failed.txt
-	private static Path getFailedListFile(Path outputPath) {
+	// e.g. results_261026_101500.json + "_too_long.txt" -> results_261026_101500_too_long.txt
+	private static Path getSiblingFile(Path outputPath, String suffix) {
 
-		String outputFileName = outputPath.toFile().getName();
+		String outputFileName = outputPath.getFileName().toString();
 		int extIndex = outputFileName.lastIndexOf(".");
 		String base = extIndex > 0 ? outputFileName.substring(0, extIndex) : outputFileName;
 
-		return outputPath.getParent().resolve(base + "_failed.txt");
+		return outputPath.toAbsolutePath().getParent().resolve(base + suffix);
+	}
+
+	private static void writeList(RunContext ctx, Path file, List<Path> paths, String description) {
+		if (paths.isEmpty()) {
+			return;
+		}
+		try {
+			Files.write(file, paths.stream().map(Path::toString).collect(Collectors.toList()),
+					StandardCharsets.UTF_8);
+			ctx.log(description + ": " + paths.size() + " document(s); list written to "
+					+ file.toAbsolutePath());
+		} catch (IOException e) {
+			ctx.log("Unable to write " + file.toAbsolutePath() + ": " + e.getMessage());
+		}
 	}
 
 	private static double estimateRemainingProcessingTime(int documentNumber, int totalDocs, long beginTime) {
 
-		long elapsedTime = System.currentTimeMillis() - beginTime;
+		long elapsedTime = Math.max(1L, System.currentTimeMillis() - beginTime);
 		int remainingDocuments = totalDocs - documentNumber;
 
 		double processingRate = (1.0 * documentNumber) / elapsedTime;
@@ -337,45 +511,122 @@ public class MainVascular {
 		return estimatedProcessingTimeLeft / 60000;
 	}
 
-	private static Path getOutputFile() throws IOException {
+	// -------------------------------------------------------------------------
+	// Console prompts (all share the one Scanner created in main)
+	// -------------------------------------------------------------------------
 
-		try (Scanner scanner = new Scanner(System.in)) {
+	private static Path getOutputFile(Scanner scanner) throws IOException {
 
-			// --- Prompt user for output file location ---
-			System.out.print("Enter the output directory path: ");
-			String outputDirInput = scanner.nextLine().trim();
+		// --- Prompt user for output file location ---
+		System.out.print("Enter the output directory path: ");
+		String outputDirInput = scanner.nextLine().trim();
 
-			System.out.print("Enter the output file name (e.g. results): ");
-			String outputFileName = scanner.nextLine().trim();
+		System.out.print("Enter the output file name (e.g. results): ");
+		String outputFileName = scanner.nextLine().trim();
 
-			String addTimeStamp = "";
-			while (!addTimeStamp.toLowerCase().startsWith("y") && !addTimeStamp.toLowerCase().startsWith("n")) {
-				System.out.print("Add timestamp to filename, (Y)es or (N)o: ");
-				addTimeStamp = scanner.nextLine().trim();
-			}
-			if (addTimeStamp.toLowerCase().startsWith("y")) {
-				outputFileName += "_" + getTimeStamp();
-			}
-			outputFileName += ".json";
-
-			Path outputDir = Paths.get(outputDirInput);
-			Path outputFile = outputDir.resolve(outputFileName);
-
-			// Create output directory if it does not exist
-			if (!Files.exists(outputDir)) {
-				Files.createDirectories(outputDir);
-				System.out.println("Created output directory: " + outputDir.toAbsolutePath());
-			}
-
-			// Warn if the file already exists — results will be appended
-			if (Files.exists(outputFile)) {
-				System.out.println("Warning: output file already exists. Results will be appended: "
-						+ outputFile.toAbsolutePath());
-			} else {
-				System.out.println("Results will be written to: " + outputFile.toAbsolutePath());
-			}
-			return outputFile;
+		String addTimeStamp = "";
+		while (!addTimeStamp.toLowerCase().startsWith("y") && !addTimeStamp.toLowerCase().startsWith("n")) {
+			System.out.print("Add timestamp to filename, (Y)es or (N)o: ");
+			addTimeStamp = scanner.nextLine().trim();
 		}
+		if (addTimeStamp.toLowerCase().startsWith("y")) {
+			outputFileName += "_" + getTimeStamp();
+		}
+		outputFileName += ".json";
+
+		Path outputDir = Paths.get(outputDirInput);
+		Path outputFile = outputDir.resolve(outputFileName);
+
+		// Create output directory if it does not exist
+		if (!Files.exists(outputDir)) {
+			Files.createDirectories(outputDir);
+			System.out.println("Created output directory: " + outputDir.toAbsolutePath());
+		}
+
+		// Warn if the file already exists — results will be appended
+		if (Files.exists(outputFile)) {
+			System.out.println("Warning: output file already exists. Results will be appended: "
+					+ outputFile.toAbsolutePath());
+		} else {
+			System.out.println("Results will be written to: " + outputFile.toAbsolutePath());
+		}
+		return outputFile;
+	}
+
+	// Either every document in CORPUS_DIRECTORY_PATH, or the paths listed in a text
+	// file (one per line; blank lines and lines starting with # are ignored). The
+	// _too_long.txt and _failed.txt files written by a run are valid list files.
+	private static List<Path> getDocumentPaths(Scanner scanner) throws IOException {
+
+		System.out.print("Enter the path of a document list file (one path per line), or press Enter to "
+				+ "process every " + DOCUMENT_EXTENSION + " file in " + CORPUS_DIRECTORY_PATH + ": ");
+		String input = stripQuotes(scanner.nextLine().trim());
+
+		if (input.isEmpty()) {
+			return getFilePaths(CORPUS_DIRECTORY_PATH, false);
+		}
+
+		Path listFile = Paths.get(input);
+		if (!Files.isRegularFile(listFile)) {
+			throw new IllegalArgumentException("List file not found: " + listFile.toAbsolutePath());
+		}
+
+		List<Path> paths = new ArrayList<>();
+		for (String line : Files.readAllLines(listFile, StandardCharsets.UTF_8)) {
+			String trimmed = line.replace("﻿", "").trim();
+			if (!trimmed.isEmpty() && !trimmed.startsWith("#")) {
+				paths.add(Paths.get(stripQuotes(trimmed)));
+			}
+		}
+		if (paths.isEmpty()) {
+			throw new IllegalArgumentException("The list file contains no document paths: "
+					+ listFile.toAbsolutePath());
+		}
+		System.out.println("Loaded " + paths.size() + " document paths from " + listFile.toAbsolutePath());
+		return paths;
+	}
+
+	private static boolean askYesNo(Scanner scanner, String prompt, boolean defaultValue) {
+		while (true) {
+			System.out.print(prompt);
+			String input = scanner.nextLine().trim().toLowerCase();
+			if (input.isEmpty()) {
+				return defaultValue;
+			}
+			if (input.startsWith("y")) {
+				return true;
+			}
+			if (input.startsWith("n")) {
+				return false;
+			}
+		}
+	}
+
+	private static int getParallel(Scanner scanner) {
+		while (true) {
+			System.out.print("Number of parallel server slots for the first pass [" + DEFAULT_PARALLEL
+					+ "] (slot size = 49152 / slots; use 1 to run long reports): ");
+			String input = scanner.nextLine().trim();
+			if (input.isEmpty()) {
+				return DEFAULT_PARALLEL;
+			}
+			try {
+				int n = Integer.parseInt(input);
+				if (n >= 1) {
+					return n;
+				}
+			} catch (NumberFormatException ignored) {
+				// fall through to the message below
+			}
+			System.out.println("Enter a whole number of 1 or more.");
+		}
+	}
+
+	private static String stripQuotes(String s) {
+		if (s.length() >= 2 && s.startsWith("\"") && s.endsWith("\"")) {
+			return s.substring(1, s.length() - 1);
+		}
+		return s;
 	}
 
 	// -------------------------------------------------------------------------

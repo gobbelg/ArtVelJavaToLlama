@@ -1,9 +1,11 @@
 package core;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -24,12 +26,26 @@ import core.VascularModels.ValueLocation;
  *
  * Use ONE ValueLocator PER SECTION PER DOCUMENT (ratios, velocities, stenosis)
  * and call locate() on that section's entries in the order the model returned
- * them. The instance keeps a cursor (start offset of the previously located
- * value) for the sequential heuristic: the model normally reports findings in
- * document order, so when the same excerpt/value occurs more than once, the
- * first occurrence AFTER the previous entry's value is chosen. If the model
- * does not report in document order, ambiguous results may be assigned to the
- * wrong occurrence, which is why they are flagged rather than hidden.
+ * them. When the same excerpt/value occurs more than once (for example
+ * "CCA: PSV 82 cm/s" on both the right and left side), the choice is made by a
+ * hybrid rule that does not depend on the model reporting in document order:
+ *
+ *   1. Each location in the document may back only ONE entry. The instance
+ *      remembers the start offsets it has already assigned ("claimed"), so two
+ *      identical entries can never be given the same location.
+ *   2. Among the candidates not yet claimed, the first one AFTER the previous
+ *      entry's value is preferred (the model usually reports in document order).
+ *   3. If no unclaimed candidate lies after the cursor (the model jumped
+ *      backwards, e.g. grouped by vessel while the report is organized by side),
+ *      the first unclaimed candidate anywhere in the document is used.
+ *   4. If every candidate is already claimed (the model returned more entries
+ *      than the text has occurrences), the location is reused, and the match
+ *      method gets a "+REUSED" suffix so it can be found when auditing.
+ *
+ * The 'ambiguous' flag is set whenever more than one candidate existed, even if
+ * the rules above chose between them; when it is set, the occurrence is an
+ * inference (which one of several identical locations belongs to this entry),
+ * not a certainty. Review ambiguous entries first when auditing.
  *
  * Not thread-safe; instances are cheap and are created per document.
  */
@@ -43,6 +59,9 @@ public class ValueLocator {
 
     private final String doc;
     private int lastValueStart = -1;
+
+    // Start offsets of values already assigned to an entry (see class comment).
+    private final Set<Integer> claimedStarts = new HashSet<>();
 
     public ValueLocator(String document) {
         this.doc = document;
@@ -104,14 +123,34 @@ public class ValueLocator {
             return NOT_FOUND;
         }
 
-        // --- Step 3: choose a candidate ---
+        // --- Step 3: choose a candidate (hybrid rule; see class comment) ---
         List<Candidate> list = new ArrayList<>(candidates.values());
-        Candidate chosen = list.stream()
-                .filter(c -> c.start() > lastValueStart)
-                .findFirst()
-                .orElse(list.get(0));
+        List<Candidate> unclaimed = new ArrayList<>();
+        for (Candidate c : list) {
+            if (!claimedStarts.contains(c.start())) {
+                unclaimed.add(c);
+            }
+        }
+
+        Candidate chosen;
+        boolean reused = false;
+        if (!unclaimed.isEmpty()) {
+            chosen = unclaimed.stream()
+                    .filter(c -> c.start() > lastValueStart)
+                    .findFirst()
+                    .orElse(unclaimed.get(0));
+        } else {
+            // Every candidate is already backing another entry.
+            chosen = list.stream()
+                    .filter(c -> c.start() > lastValueStart)
+                    .findFirst()
+                    .orElse(list.get(0));
+            reused = true;
+        }
         boolean ambiguous = list.size() > 1;
         lastValueStart = chosen.start();
+        claimedStarts.add(chosen.start());
+        String method = reused ? chosen.method() + "+REUSED" : chosen.method();
 
         // --- Step 4: surrounding text from the document itself ---
         int s = chosen.start();
@@ -120,7 +159,7 @@ public class ValueLocator {
         String matched = doc.substring(s, e);
         String after = doc.substring(e, Math.min(doc.length(), e + CONTEXT_CHARS));
 
-        return new ValueLocation(true, s, e, before, matched, after, ambiguous, chosen.method());
+        return new ValueLocation(true, s, e, before, matched, after, ambiguous, method);
     }
 
     // -------------------------------------------------------------------------

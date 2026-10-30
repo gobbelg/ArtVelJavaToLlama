@@ -1,16 +1,27 @@
 package core;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.Charset;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
+import java.time.Duration;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -40,29 +51,79 @@ public class LlamaVascularExtractor {
     }
 
     // -------------------------------------------------------------------------
-    // TOKEN BUDGET PARAMETERS (TEST THESE)
+    // OUTPUT TOKEN BUDGET (TUNE FROM OBSERVED DATA)
     // -------------------------------------------------------------------------
-    // MAX_TOKENS is the per-request OUTPUT (generation) budget, not the context
-    // window. The server's per-slot context (= --ctx-size / --parallel) must hold
-    // system prompt + report + OUTPUT together. Server settings assumed:
-    // --ctx-size 49152 --parallel 4  => 12288 tokens per slot. The prompt and
-    // report use roughly 2.5-3.5K, so MAX_TOKENS 7168 fits (about 10.7K total),
-    // and RETRY_MAX_TOKENS 8192 still fits (about 11.7K). If you lower
-    // --ctx-size/--parallel headroom, lower these too; llama.cpp stops at the
-    // slot's context limit and reports finish_reason=length.
+    // max_tokens is enforced by the server, not by the model: when the count is
+    // reached, generation simply stops and the JSON is cut off mid-way (finish_reason
+    // = length). The model does not shorten its answer to fit. Therefore:
     //
-    // Server log analysis showed many documents need 4,300-4,800 output tokens
-    // (source_text excerpts roughly double tokens per entry). With the old
-    // 4096 cap those documents were truncated and regenerated (~6.5 minutes of
-    // a slot each). 7168 lets the first attempt complete; the retry is now a
-    // rarely used safety net. Shortening source_text (see SYSTEM_PROMPT) also
-    // reduces output length and therefore time per document.
+    //   - MAX_TOKENS must be ABOVE the largest legitimate output expected. It is
+    //     also a runaway guard: a model stuck in a repetition loop is stopped at
+    //     this cap instead of filling the rest of the slot.
+    //   - ContextBudget reserves MAX_TOKENS of every slot for output and rejects
+    //     (DocumentTooLongException) any report too long to leave that room. Those
+    //     reports are collected for a later pass with fewer, larger slots, where
+    //     the same check admits them.
+    //   - Each slot's size is --ctx-size / --parallel (see LlamaServerConfig); it is
+    //     passed to the constructor, not hard-coded here.
+    //
+    // Calibration: after every pass the extractor prints "Observed token usage"
+    // with the largest completion_tokens actually produced. Set MAX_TOKENS to
+    // roughly that value plus 15-25% headroom. Raising it admits fewer documents
+    // in the first pass; lowering it admits more but risks truncating legitimate
+    // outputs. (The previous 4,300-4,800 token observations pre-date the units field
+    // and any change to source_text length, so re-measure.)
     // -------------------------------------------------------------------------
-    public static final int MAX_TOKENS = 7168;
+    public static final int MAX_TOKENS = 6000;
+
+    // Larger budget for the single retry after a truncated first attempt. The retry
+    // is also limited to the output room actually left in the slot, and is skipped
+    // when that is not larger than MAX_TOKENS (a repeat would fail the same way).
     public static final int RETRY_MAX_TOKENS = 8192;
 
     // Repair prompt output budget — repaired JSON is never large.
     private static final int REPAIR_MAX_TOKENS = 2048;
+
+    // -------------------------------------------------------------------------
+    // HTTP TIMEOUTS
+    // -------------------------------------------------------------------------
+    // CONNECT_TIMEOUT: time allowed to open the connection to llama-server.
+    // REQUEST_TIMEOUT: time allowed for the WHOLE request (prefill + generation).
+    // Without it a stalled server would hang its worker thread, and therefore
+    // analyzeDocumentsParallel, forever. A request that times out fails that one
+    // document (it lands in the _failed list) and the run continues.
+    // Choose it well above the slowest legitimate request: up to 8,192 generated
+    // tokens at roughly 10 tokens/second per slot is about 14 minutes.
+    // -------------------------------------------------------------------------
+    private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(30);
+    public static final Duration REQUEST_TIMEOUT = Duration.ofMinutes(20);
+
+    // -------------------------------------------------------------------------
+    // THINKING / REASONING (Gemma 4)
+    // -------------------------------------------------------------------------
+    // Gemma 4 can emit a "thought channel" before its answer. Extraction does not
+    // need it and it costs generation time. DISABLE_THINKING sends
+    // chat_template_kwargs {"enable_thinking": false} with every request.
+    //
+    // KNOWN llama.cpp ISSUE (reported on builds around 11146-11429, ggml-org/llama.cpp
+    // issue 30256): with response_format json_schema, the grammar built by the
+    // server still allows the thought channel even when thinking is disabled, and a
+    // long prompt can make the model open it and never close it, running to
+    // max_tokens. This class detects that case (reasoning_content in the response, or
+    // finish_reason=length with no answer), reports it in the "Observed token usage"
+    // summary and the per-document notes, and does not waste a retry on it.
+    //
+    // If the summary reports reasoning output, set USE_GRAMMAR_INSTEAD_OF_SCHEMA to
+    // true: the same output structure is then sent as a GBNF "grammar" (the
+    // documented workaround), which does not allow the thought channel.
+    // -------------------------------------------------------------------------
+    private static final boolean DISABLE_THINKING = true;
+    private static final boolean USE_GRAMMAR_INSTEAD_OF_SCHEMA = false;
+
+    // This many IDENTICAL entries (same vessel, side, location, type, direction,
+    // value, units and excerpt) in one section is treated as a probable repetition
+    // loop. Genuine duplicates are KEPT (never collapsed); they are only reported.
+    private static final int LOOP_REPEAT_THRESHOLD = 4;
 
     // -------------------------------------------------------------------------
     // RESPONSE-FORMAT MODE (TEST THIS)
@@ -80,39 +141,212 @@ public class LlamaVascularExtractor {
     // These mirror the enums in buildResponseFormat() and the repair prompt.
     private static final Set<String> VALID_VESSELS         = Set.of("ICA", "ECA", "CCA");
     private static final Set<String> VALID_LATERALITY      = Set.of("Left", "Right", "InsufficientInformation");
-    private static final Set<String> VALID_VELOCITY_TYPES  = Set.of("PSV", "EDV");
-    private static final Set<String> VALID_FLOW_DIRECTIONS = Set.of("anterograde", "retrograde");
+    private static final Set<String> VALID_VELOCITY_TYPES  = Set.of("PSV", "EDV", "Unspecified");
+    private static final Set<String> VALID_FLOW_DIRECTIONS = Set.of("anterograde", "retrograde", "Unspecified");
+    private static final Set<String> VALID_VESSEL_LOCATIONS =
+            Set.of("proximal", "mid", "distal", "bulb", "bifurcation", "InsufficientInformation");
+    private static final Set<String> VALID_UNITS = Set.of("cm/s", "m/s", "Other", "Unspecified");
 
-    private final HttpClient httpClient = HttpClient.newHttpClient();
+    // HTTP/1.1 is pinned because llama-server does not speak HTTP/2; the default
+    // client would first attempt an h2c upgrade on every connection.
+    private final HttpClient httpClient = HttpClient.newBuilder()
+            .version(HttpClient.Version.HTTP_1_1)
+            .connectTimeout(CONNECT_TIMEOUT)
+            .build();
+
+    // Per-document diagnostic notes (retry used, repair used, reasoning output,
+    // repeated entries). A document is processed start to finish on one thread, so
+    // a ThreadLocal collects the notes during the call; they are then parked here
+    // until the caller collects them with takeNotes().
+    private static final ThreadLocal<List<String>> CURRENT_NOTES = new ThreadLocal<>();
+    private final ConcurrentHashMap<String, String> notesByDocument = new ConcurrentHashMap<>();
     private final String serverUrl;
     private final String modelName;
     private final String systemPrompt;
+    private final ContextBudget budget;
+    private final UsageStats usage = new UsageStats();
 
-    public LlamaVascularExtractor(String serverUrl, String modelName, String systemPrompt) {
+    /**
+     * @param slotSizeTokens context available to ONE request on the server
+     *                       (--ctx-size / --parallel); see LlamaServerConfig.slotSize()
+     */
+    public LlamaVascularExtractor(String serverUrl, String modelName, String systemPrompt,
+            int slotSizeTokens) {
         this.serverUrl    = serverUrl;
         this.modelName    = modelName;
         this.systemPrompt = systemPrompt;
+        this.budget       = new ContextBudget(slotSizeTokens, systemPrompt, MAX_TOKENS);
+    }
+
+    public ContextBudget getBudget() {
+        return budget;
+    }
+
+    /** Summary of real token usage reported by the server (for calibrating MAX_TOKENS). */
+    public String usageSummary() {
+        return usage.summary(MAX_TOKENS);
     }
 
     // -------------------------------------------------------------------------
     // Public API
     // -------------------------------------------------------------------------
 
+    // -------------------------------------------------------------------------
+    // Document reading with charset fallback
+    // -------------------------------------------------------------------------
+
+    private static final Charset WINDOWS_1252 = Charset.forName("windows-1252");
+
+    /**
+     * Reads a report file as text. Files.readString() assumes UTF-8 and throws
+     * MalformedInputException on anything else (e.g. a Windows-1252 degree sign
+     * or smart quote in a VA text export), which would fail the whole document.
+     *
+     * The bytes are decoded STRICTLY (malformed input is an error, never silently
+     * replaced) with this fallback chain:
+     *   1. the charset indicated by a byte-order mark, if the file has one
+     *      (UTF-8, UTF-16LE, UTF-16BE); the BOM itself is not part of the text
+     *   2. UTF-8
+     *   3. Windows-1252 (the usual encoding of non-UTF-8 text from Windows systems)
+     *   4. ISO-8859-1, which maps every byte value and therefore never fails
+     *
+     * A warning naming the file and the charset used is written to System.err
+     * whenever the file is not plain UTF-8. The returned String is the single
+     * text used for BOTH the model prompt and ValueLocator, so the offsets in the
+     * output are offsets into this decoded text (BOM excluded).
+     */
+    static String readDocumentText(Path documentPath) throws IOException {
+        byte[] bytes = Files.readAllBytes(documentPath);
+
+        Charset bomCharset = null;
+        int bomLength = 0;
+        if (bytes.length >= 3 && (bytes[0] & 0xFF) == 0xEF
+                && (bytes[1] & 0xFF) == 0xBB && (bytes[2] & 0xFF) == 0xBF) {
+            bomCharset = StandardCharsets.UTF_8;
+            bomLength = 3;
+        } else if (bytes.length >= 2 && (bytes[0] & 0xFF) == 0xFF && (bytes[1] & 0xFF) == 0xFE) {
+            bomCharset = StandardCharsets.UTF_16LE;
+            bomLength = 2;
+        } else if (bytes.length >= 2 && (bytes[0] & 0xFF) == 0xFE && (bytes[1] & 0xFF) == 0xFF) {
+            bomCharset = StandardCharsets.UTF_16BE;
+            bomLength = 2;
+        }
+
+        if (bomCharset != null) {
+            String text = decodeStrict(bytes, bomLength, bytes.length - bomLength, bomCharset);
+            if (text != null) {
+                if (!StandardCharsets.UTF_8.equals(bomCharset)) {
+                    System.err.println("Note: " + documentPath.getFileName() + " decoded as "
+                            + bomCharset.name() + " (byte-order mark).");
+                }
+                return text;
+            }
+        }
+
+        String text = decodeStrict(bytes, 0, bytes.length, StandardCharsets.UTF_8);
+        if (text != null) {
+            return text;
+        }
+
+        text = decodeStrict(bytes, 0, bytes.length, WINDOWS_1252);
+        if (text != null) {
+            System.err.println("Warning: " + documentPath.getFileName()
+                    + " is not valid UTF-8; decoded as Windows-1252.");
+            return text;
+        }
+
+        System.err.println("Warning: " + documentPath.getFileName()
+                + " is not valid UTF-8 or Windows-1252; decoded as ISO-8859-1.");
+        return new String(bytes, StandardCharsets.ISO_8859_1);
+    }
+
+    // Strict decode: returns null (instead of substituting U+FFFD) if any byte
+    // sequence is malformed or unmappable in the given charset.
+    private static String decodeStrict(byte[] bytes, int offset, int length, Charset charset) {
+        CharsetDecoder decoder = charset.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT);
+        try {
+            return decoder.decode(ByteBuffer.wrap(bytes, offset, length)).toString();
+        } catch (CharacterCodingException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Returns (and clears) the diagnostic notes recorded while processing the
+     * given document, e.g. "RETRIED_LARGER_BUDGET; REASONING_CONTENT(1200 chars)".
+     * Empty string if there were none. Works for failed documents too.
+     *
+     * @param documentPathString the same string as VascularResult.documentPathString()
+     *                           (i.e. Path.toString() of the path passed in)
+     */
+    public String takeNotes(String documentPathString) {
+        String notes = notesByDocument.remove(documentPathString);
+        return notes == null ? "" : notes;
+    }
+
+    private static void note(String text) {
+        List<String> notes = CURRENT_NOTES.get();
+        if (notes != null) {
+            notes.add(text);
+        }
+    }
+
     public VascularResult analyzeDocument(Path documentPath) throws Exception {
-        String document = Files.readString(documentPath);
+        List<String> notes = new ArrayList<>();
+        CURRENT_NOTES.set(notes);
+        try {
+            return analyzeDocumentCore(documentPath);
+        } finally {
+            CURRENT_NOTES.remove();
+            if (!notes.isEmpty()) {
+                notesByDocument.put(documentPath.toString(), String.join("; ", notes));
+            }
+        }
+    }
+
+    private VascularResult analyzeDocumentCore(Path documentPath) throws Exception {
+        String document = readDocumentText(documentPath);
+
+        // Context-fit guard: reject reports too long for one slot BEFORE any model
+        // call (throws ContextBudget.DocumentTooLongException; callers set these
+        // aside for a pass with larger slots).
+        budget.requireFits(document);
 
         // Primary attempt.
         String rawContent;
         try {
             rawContent = callModelForContent(buildUserMessage(document), MAX_TOKENS);
         } catch (TruncationException te) {
+            // A repetition loop or an unclosed thought channel is NOT cured by a
+            // larger budget (it would just run longer), so fail fast instead.
+            if (te.repetitionSuspected) {
+                throw new RuntimeException("Output truncated at max_tokens=" + MAX_TOKENS
+                        + " and the partial output repeats the same entries (repetition loop); "
+                        + "not retried with a larger budget.", te);
+            }
+            if (te.reasoningChars > 0 && te.contentChars == 0) {
+                throw new RuntimeException("Output truncated at max_tokens=" + MAX_TOKENS
+                        + " while the model was still in its thought channel (" + te.reasoningChars
+                        + " characters of reasoning, no answer). Not retried. See the thinking notes "
+                        + "in LlamaVascularExtractor (DISABLE_THINKING, USE_GRAMMAR_INSTEAD_OF_SCHEMA).", te);
+            }
+
             // Output hit the token ceiling. A plain retry at temperature 0 would
             // reproduce identical (still-truncated) output, so the ONLY useful
             // response is a larger budget. Jump straight to the larger-budget
             // retry and skip the repair path (repair cannot fix truncation).
+            int retryTokens = Math.min(RETRY_MAX_TOKENS, budget.availableOutputTokens(document));
+            if (retryTokens <= MAX_TOKENS) {
+                throw new RuntimeException("Output truncated at max_tokens=" + MAX_TOKENS
+                        + " and the slot has no larger output budget for this document (about "
+                        + budget.availableOutputTokens(document) + " tokens available).", te);
+            }
+            note("RETRIED_LARGER_BUDGET");
             System.err.println("Primary truncated for " + documentPath.getFileName()
-                    + "; retrying with larger token budget.");
-            String retryContent = callModelForContent(buildUserMessage(document), RETRY_MAX_TOKENS);
+                    + "; retrying with max_tokens=" + retryTokens + ".");
+            String retryContent = callModelForContent(buildUserMessage(document), retryTokens);
             ModelVascularResult retryResult =
                     OBJECT_MAPPER.readValue(retryContent.trim(), ModelVascularResult.class);
             validate(retryResult);
@@ -137,6 +371,7 @@ public class LlamaVascularExtractor {
                     + documentPath.getFileName() + ": " + primaryFailure.getMessage());
 
             try {
+                note("JSON_REPAIRED");
                 ModelVascularResult repaired = repairInvalidJson(rawContent);
                 validate(repaired);
                 return enrich(repaired, documentPath, document);
@@ -189,7 +424,7 @@ public class LlamaVascularExtractor {
                 futures.add(executor.submit(() -> {
                     try {
                         // A missing/unreadable file surfaces as an IOException
-                        // from Files.readString inside analyzeDocument and is
+                        // from readDocumentText inside analyzeDocument and is
                         // handled here like any other per-document failure.
                         VascularResult result = analyzeDocument(documentPath);
                         onResultReady.accept(result);
@@ -237,22 +472,23 @@ public class LlamaVascularExtractor {
                 {
                   "ICA_CCA_ratio": [
                     { "laterality": "Left|Right|InsufficientInformation",
-                      "source_text": "<short excerpt copied verbatim from the report that contains the value>",
+                      "source_text": "<excerpt copied verbatim from the report that contains the value and occurs only once in the report>",
                       "ratio_value": "<number as string or InsufficientInformation>" }
                   ],
                   "flow_velocities": [
                     { "vessel": "ICA|ECA|CCA",
                       "laterality": "Left|Right|InsufficientInformation",
-                      "vessel_location": "proximal|mid|distal|InsufficientInformation",
-                      "velocity_type": "PSV|EDV",
-                      "flow_direction": "anterograde|retrograde",
-                      "source_text": "<short excerpt copied verbatim from the report that contains the value>",
-                      "value": "<number as string, NoMeasurableFlow, or InsufficientInformation>" }
+                      "vessel_location": "proximal|mid|distal|bulb|bifurcation|InsufficientInformation",
+                      "velocity_type": "PSV|EDV|Unspecified",
+                      "flow_direction": "anterograde|retrograde|Unspecified",
+                      "source_text": "<excerpt copied verbatim from the report that contains the value and occurs only once in the report>",
+                      "value": "<number as string, NoMeasurableFlow, or InsufficientInformation>",
+                      "units": "cm/s|m/s|Other|Unspecified" }
                   ],
                   "stenosis": [
                     { "vessel": "ICA|ECA|CCA",
                       "laterality": "Left|Right|InsufficientInformation",
-                      "source_text": "<short excerpt copied verbatim from the report that contains the value>",
+                      "source_text": "<excerpt copied verbatim from the report that contains the value and occurs only once in the report>",
                       "percentage": "<string or InsufficientInformation>" }
                   ]
                 }
@@ -311,12 +547,23 @@ public class LlamaVascularExtractor {
 
         // ACCURACY: constrain output at generation time (json_schema or
         // json_object, selected by USE_JSON_SCHEMA).
-        requestBody.put("response_format", buildResponseFormat());
+        // (or the equivalent GBNF grammar; see USE_GRAMMAR_INSTEAD_OF_SCHEMA).
+        if (USE_GRAMMAR_INSTEAD_OF_SCHEMA) {
+            requestBody.put("grammar", buildGrammar());
+        } else {
+            requestBody.put("response_format", buildResponseFormat());
+        }
+
+        // Extraction needs no reasoning; see DISABLE_THINKING.
+        if (DISABLE_THINKING) {
+            requestBody.put("chat_template_kwargs", Map.of("enable_thinking", false));
+        }
 
         requestBody.put("messages", messages);
 
         String responseJson = postJson(serverUrl + "/v1/chat/completions", requestBody);
         JsonNode root = OBJECT_MAPPER.readTree(responseJson);
+        recordUsage(root, messages);
         JsonNode contentNode = root.path("choices").path(0).path("message").path("content");
 
         if (contentNode.isMissingNode() || contentNode.isNull()) {
@@ -327,10 +574,22 @@ public class LlamaVascularExtractor {
         // slot's context limit) was hit. Thrown as a typed exception so
         // analyzeDocument can route truncation to the larger-budget retry rather
         // than the (useless-for-truncation) repair path.
+        String reasoning = root.path("choices").path(0).path("message")
+                .path("reasoning_content").asText("");
+        if (!reasoning.isEmpty()) {
+            usage.recordReasoning(reasoning.length());
+            note("REASONING_CONTENT(" + reasoning.length() + " chars)");
+        }
+
         String finishReason = root.path("choices").path(0).path("finish_reason").asText("");
         if ("length".equals(finishReason)) {
+            String partial = contentNode.asText();
+            boolean loop = looksLikeRepetitionLoop(partial);
+            if (loop) {
+                note("REPETITION_LOOP");
+            }
             throw new TruncationException("Model response truncated (finish_reason=length). "
-                    + "Partial content:\n" + contentNode.asText());
+                    + "Partial content:\n" + partial, loop, reasoning.length(), partial.length());
         }
 
         String content = contentNode.asText();
@@ -346,6 +605,75 @@ public class LlamaVascularExtractor {
         }
 
         return content;
+    }
+
+    // Records the server-reported token counts (usage.prompt_tokens /
+    // usage.completion_tokens) so MAX_TOKENS and ContextBudget.CHARS_PER_TOKEN can
+    // be checked against real data. Called before the truncation check so that
+    // truncated calls are counted too.
+    private void recordUsage(JsonNode root, List<Map<String, String>> messages) {
+        JsonNode u = root.path("usage");
+        int promptTokens = u.path("prompt_tokens").asInt(-1);
+        int completionTokens = u.path("completion_tokens").asInt(-1);
+        if (promptTokens <= 0 || completionTokens < 0) {
+            return;
+        }
+        long chars = 0;
+        for (Map<String, String> m : messages) {
+            chars += m.get("content").length();
+        }
+        usage.record(promptTokens, completionTokens, chars);
+    }
+
+    // Thread-safe accumulator for the observed token usage.
+    private static final class UsageStats {
+        private int calls;
+        private int maxPrompt;
+        private int maxCompletion;
+        private double minCharsPerToken = Double.MAX_VALUE;
+        private int reasoningCalls;
+        private int maxReasoningChars;
+
+        synchronized void recordReasoning(int chars) {
+            reasoningCalls++;
+            maxReasoningChars = Math.max(maxReasoningChars, chars);
+        }
+
+        synchronized void record(int promptTokens, int completionTokens, long promptChars) {
+            calls++;
+            maxPrompt = Math.max(maxPrompt, promptTokens);
+            maxCompletion = Math.max(maxCompletion, completionTokens);
+            minCharsPerToken = Math.min(minCharsPerToken, promptChars / (double) promptTokens);
+        }
+
+        synchronized String summary(int maxTokensCap) {
+            if (calls == 0) {
+                return "Observed token usage: no model calls recorded.";
+            }
+            StringBuilder sb = new StringBuilder();
+            sb.append(String.format(
+                    "Observed token usage over %d model calls: largest prompt %d tokens; "
+                    + "largest completion %d tokens (MAX_TOKENS = %d); lowest characters per token %.2f "
+                    + "(ContextBudget assumes %.1f; includes chat-template tokens, so slightly pessimistic).",
+                    calls, maxPrompt, maxCompletion, maxTokensCap, minCharsPerToken,
+                    ContextBudget.CHARS_PER_TOKEN));
+            if (maxCompletion >= 0.9 * maxTokensCap) {
+                sb.append("\n  NOTE: completions reached 90% or more of MAX_TOKENS; consider raising it, "
+                        + "or check the long outputs for repetition loops.");
+            }
+            if (reasoningCalls > 0) {
+                sb.append(String.format("\n  WARNING: %d model call(s) returned reasoning_content (longest %d "
+                        + "characters) even though thinking is disabled. This costs generation time and can "
+                        + "run to max_tokens. Known llama.cpp issue with response_format json_schema on "
+                        + "Gemma 4; set USE_GRAMMAR_INSTEAD_OF_SCHEMA = true in LlamaVascularExtractor.",
+                        reasoningCalls, maxReasoningChars));
+            }
+            if (minCharsPerToken < ContextBudget.CHARS_PER_TOKEN) {
+                sb.append("\n  NOTE: some prompts were denser than the assumed characters per token; "
+                        + "consider lowering ContextBudget.CHARS_PER_TOKEN.");
+            }
+            return sb.toString();
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -364,14 +692,12 @@ public class LlamaVascularExtractor {
     // and percentage remain free strings because the prompt requires verbatim
     // preservation (including ranges like "60-69%").
     //
-    // ACCURACY NOTE (TEST THIS): velocity_type (PSV|EDV) and flow_direction
-    // (anterograde|retrograde) have NO "InsufficientInformation" escape value, as
-    // in the repair-prompt schema. The model is therefore forced to pick one even
-    // when the report is silent. The system prompt tells it to default
-    // velocity_type to "PSV" and flow_direction to "anterograde" when the report
-    // does not state them,
-    // but if you see spurious values, add "InsufficientInformation" to these two
-    // enums here (and in the repair prompt / system prompt / validate()).
+    // NOTE: velocity_type (PSV|EDV|Unspecified) and flow_direction
+    // (anterograde|retrograde|Unspecified) each include an "Unspecified" value so
+    // the model is never forced to guess when the report is silent. units
+    // (cm/s|m/s|Other|Unspecified) is likewise closed. vessel_location also allows
+    // "bulb" and "bifurcation". Keep these enums in sync with the system prompt,
+    // the repair prompt, and the VALID_* sets used by validate().
     private static Object buildResponseFormat() {
         if (!USE_JSON_SCHEMA) {
             return Map.of("type", "json_object");
@@ -379,9 +705,10 @@ public class LlamaVascularExtractor {
 
         List<String> vessels       = List.of("ICA", "ECA", "CCA");
         List<String> laterality    = List.of("Left", "Right", "InsufficientInformation");
-        List<String> velocityType  = List.of("PSV", "EDV");
-        List<String> flowDirection = List.of("anterograde", "retrograde");
-        List<String> vesselLoc     = List.of("proximal", "mid", "distal", "InsufficientInformation");
+        List<String> velocityType  = List.of("PSV", "EDV", "Unspecified");
+        List<String> flowDirection = List.of("anterograde", "retrograde", "Unspecified");
+        List<String> vesselLoc     = List.of("proximal", "mid", "distal", "bulb", "bifurcation", "InsufficientInformation");
+        List<String> unitsEnum     = List.of("cm/s", "m/s", "Other", "Unspecified");
 
         Map<String, Object> ratioItem = objectSchema(
                 orderedProps(
@@ -398,9 +725,10 @@ public class LlamaVascularExtractor {
                         "velocity_type",   enumString(velocityType),
                         "flow_direction",  enumString(flowDirection),
                         "source_text",     Map.of("type", "string"),
-                        "value",           Map.of("type", "string")),
+                        "value",           Map.of("type", "string"),
+                        "units",           enumString(unitsEnum)),
                 List.of("vessel", "laterality", "vessel_location", "velocity_type",
-                        "flow_direction", "source_text", "value"));
+                        "flow_direction", "source_text", "value", "units"));
 
         Map<String, Object> stenosisItem = objectSchema(
                 orderedProps(
@@ -469,17 +797,124 @@ public class LlamaVascularExtractor {
         return m;
     }
 
+    // -------------------------------------------------------------------------
+    // GBNF grammar (alternative to response_format json_schema)
+    // -------------------------------------------------------------------------
+    // Describes exactly the same output as buildResponseFormat(): three arrays in
+    // a fixed order, each item an object with its fields in a fixed order, closed
+    // vocabularies as alternatives, free text as JSON strings. Used only when
+    // USE_GRAMMAR_INSTEAD_OF_SCHEMA is true. Keep the vocabularies in sync with
+    // buildResponseFormat().
+    static String buildGrammar() {
+        List<String> vessels       = List.of("ICA", "ECA", "CCA");
+        List<String> laterality    = List.of("Left", "Right", "InsufficientInformation");
+        List<String> velocityType  = List.of("PSV", "EDV", "Unspecified");
+        List<String> flowDirection = List.of("anterograde", "retrograde", "Unspecified");
+        List<String> vesselLoc     = List.of("proximal", "mid", "distal", "bulb", "bifurcation",
+                "InsufficientInformation");
+        List<String> unitsEnum     = List.of("cm/s", "m/s", "Other", "Unspecified");
+
+        StringBuilder g = new StringBuilder();
+        g.append("root ::= ").append(gbnfObject(
+                gbnfField("ICA_CCA_ratio", "ratio-array"),
+                gbnfField("flow_velocities", "velocity-array"),
+                gbnfField("stenosis", "stenosis-array"))).append("\n");
+
+        g.append("ratio-array ::= ").append(gbnfArray("ratio-item")).append("\n");
+        g.append("velocity-array ::= ").append(gbnfArray("velocity-item")).append("\n");
+        g.append("stenosis-array ::= ").append(gbnfArray("stenosis-item")).append("\n");
+
+        g.append("ratio-item ::= ").append(gbnfObject(
+                gbnfField("laterality", "laterality"),
+                gbnfField("source_text", "string"),
+                gbnfField("ratio_value", "string"))).append("\n");
+
+        g.append("velocity-item ::= ").append(gbnfObject(
+                gbnfField("vessel", "vessel"),
+                gbnfField("laterality", "laterality"),
+                gbnfField("vessel_location", "vessel-location"),
+                gbnfField("velocity_type", "velocity-type"),
+                gbnfField("flow_direction", "flow-direction"),
+                gbnfField("source_text", "string"),
+                gbnfField("value", "string"),
+                gbnfField("units", "units"))).append("\n");
+
+        g.append("stenosis-item ::= ").append(gbnfObject(
+                gbnfField("vessel", "vessel"),
+                gbnfField("laterality", "laterality"),
+                gbnfField("source_text", "string"),
+                gbnfField("percentage", "string"))).append("\n");
+
+        g.append("vessel ::= ").append(gbnfEnum(vessels)).append("\n");
+        g.append("laterality ::= ").append(gbnfEnum(laterality)).append("\n");
+        g.append("vessel-location ::= ").append(gbnfEnum(vesselLoc)).append("\n");
+        g.append("velocity-type ::= ").append(gbnfEnum(velocityType)).append("\n");
+        g.append("flow-direction ::= ").append(gbnfEnum(flowDirection)).append("\n");
+        g.append("units ::= ").append(gbnfEnum(unitsEnum)).append("\n");
+
+        // Same JSON string and whitespace rules as llama.cpp's grammars/json.gbnf.
+        g.append("string ::= \"\\\"\" ( [^\"\\\\\\x7F\\x00-\\x1F] | \"\\\\\" ")
+         .append("( [\"\\\\bfnrt] | \"u\" [0-9a-fA-F]{4} ) )* \"\\\"\"\n");
+        g.append("ws ::= | \" \" | \"\\n\" [ \\t]{0,20}\n");
+        return g.toString();
+    }
+
+    // A GBNF literal matching the given text exactly.
+    private static String gbnfLit(String text) {
+        return "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+    }
+
+    // Alternatives matching a JSON string whose value is one of the given values.
+    private static String gbnfEnum(List<String> values) {
+        List<String> alts = new ArrayList<>();
+        for (String v : values) {
+            alts.add(gbnfLit("\"" + v + "\""));
+        }
+        return String.join(" | ", alts);
+    }
+
+    // "name": <valueRule>
+    private static String gbnfField(String name, String valueRule) {
+        return gbnfLit("\"" + name + "\"") + " ws " + gbnfLit(":") + " ws " + valueRule;
+    }
+
+    private static String gbnfObject(String... fields) {
+        return gbnfLit("{") + " ws " + String.join(" ws " + gbnfLit(",") + " ws ", fields)
+                + " ws " + gbnfLit("}");
+    }
+
+    private static String gbnfArray(String itemRule) {
+        return gbnfLit("[") + " ws ( " + itemRule + " ( ws " + gbnfLit(",") + " ws " + itemRule
+                + " )* )? ws " + gbnfLit("]");
+    }
+
     private String postJson(String url, Object body) throws Exception {
         String json = OBJECT_MAPPER.writeValueAsString(body);
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .header("Content-Type", "application/json")
+                .timeout(REQUEST_TIMEOUT)
                 .POST(HttpRequest.BodyPublishers.ofString(json))
                 .build();
 
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response;
+        try {
+            response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        } catch (HttpTimeoutException e) {
+            throw new RuntimeException("No response from llama-server within the HTTP timeout ("
+                    + "connect " + CONNECT_TIMEOUT.toSeconds() + " s, request "
+                    + REQUEST_TIMEOUT.toMinutes() + " min): " + e.getMessage(), e);
+        }
 
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            // Safety net: if the character estimate let a too-long prompt through,
+            // the server rejects it; treat that like the guard does.
+            if (response.statusCode() == 400
+                    && (response.body().contains("exceed_context_size")
+                            || response.body().contains("exceeds the available context size"))) {
+                throw new ContextBudget.DocumentTooLongException(
+                        "Server rejected the prompt as larger than the slot context: " + response.body());
+            }
             throw new RuntimeException(
                     "llama.cpp server error: " + response.statusCode() + "\n" + response.body());
         }
@@ -490,7 +925,57 @@ public class LlamaVascularExtractor {
     // token budget) from malformed-but-complete output (needs the repair prompt).
     private static class TruncationException extends RuntimeException {
         private static final long serialVersionUID = 1L;
-        TruncationException(String message) { super(message); }
+        final boolean repetitionSuspected;
+        final int reasoningChars;
+        final int contentChars;
+
+        TruncationException(String message, boolean repetitionSuspected, int reasoningChars,
+                int contentChars) {
+            super(message);
+            this.repetitionSuspected = repetitionSuspected;
+            this.reasoningChars = reasoningChars;
+            this.contentChars = contentChars;
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Repetition detection
+    // -------------------------------------------------------------------------
+
+    private static final Pattern SOURCE_TEXT_FIELD =
+            Pattern.compile("\"source_text\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"");
+
+    // For TRUNCATED output (not valid JSON): true when the same source_text value
+    // appears LOOP_REPEAT_THRESHOLD or more times. Excerpts are required to be
+    // unique in the report, so a genuine output has at most a couple of entries per
+    // excerpt (e.g. its PSV and EDV entries).
+    private static boolean looksLikeRepetitionLoop(String partialJson) {
+        Map<String, Integer> counts = new HashMap<>();
+        Matcher m = SOURCE_TEXT_FIELD.matcher(partialJson);
+        while (m.find()) {
+            if (counts.merge(m.group(1), 1, Integer::sum) >= LOOP_REPEAT_THRESHOLD) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // For COMPLETE output: the highest number of identical entries in one section.
+    private static int maxIdenticalEntries(ModelVascularResult r) {
+        int max = 0;
+        Map<ModelIcaCcaRatio, Integer> ratios = new HashMap<>();
+        for (ModelIcaCcaRatio x : r.ICA_CCA_ratio()) {
+            max = Math.max(max, ratios.merge(x, 1, Integer::sum));
+        }
+        Map<ModelFlowVelocity, Integer> velocities = new HashMap<>();
+        for (ModelFlowVelocity x : r.flow_velocities()) {
+            max = Math.max(max, velocities.merge(x, 1, Integer::sum));
+        }
+        Map<ModelStenosis, Integer> stenoses = new HashMap<>();
+        for (ModelStenosis x : r.stenosis()) {
+            max = Math.max(max, stenoses.merge(x, 1, Integer::sum));
+        }
+        return max;
     }
 
     // -------------------------------------------------------------------------
@@ -520,6 +1005,12 @@ public class LlamaVascularExtractor {
             if (!VALID_LATERALITY.contains(v.laterality())) {
                 System.err.println("Warning: unexpected laterality value: " + v.laterality());
             }
+            if (!VALID_VESSEL_LOCATIONS.contains(v.vessel_location())) {
+                System.err.println("Warning: unexpected vessel_location value: " + v.vessel_location());
+            }
+            if (!VALID_UNITS.contains(v.units())) {
+                System.err.println("Warning: unexpected units value: " + v.units());
+            }
             if (!VALID_VELOCITY_TYPES.contains(v.velocity_type())) {
                 System.err.println("Warning: unexpected velocity_type value: " + v.velocity_type());
             }
@@ -535,6 +1026,15 @@ public class LlamaVascularExtractor {
             if (!VALID_LATERALITY.contains(s.laterality())) {
                 System.err.println("Warning: unexpected laterality in stenosis: " + s.laterality());
             }
+        }
+
+        // Identical entries are kept (never collapsed), but many of them is a
+        // strong sign of a repetition loop, so report it.
+        int repeats = maxIdenticalEntries(result);
+        if (repeats >= LOOP_REPEAT_THRESHOLD) {
+            note("REPEATED_ENTRIES(" + repeats + ")");
+            System.err.println("Warning: " + repeats + " identical entries in one section; "
+                    + "possible repetition loop (entries are kept).");
         }
     }
 
@@ -601,7 +1101,7 @@ public class LlamaVascularExtractor {
         List<FlowVelocity> velocities = model.flow_velocities().stream()
                 .map(v -> new FlowVelocity(
                         v.vessel(), v.laterality(), v.vessel_location(),
-                        v.velocity_type(), v.flow_direction(), v.source_text(), v.value(),
+                        v.velocity_type(), v.flow_direction(), v.source_text(), v.value(), v.units(),
                         velocityLocator.locate(v.source_text(), v.value())))
                 .toList();
 
@@ -650,7 +1150,8 @@ public class LlamaVascularExtractor {
         model.flow_velocities().forEach(v ->
                 System.out.println("  " + v.laterality() + " " + v.vessel()
                         + " (" + v.vessel_location() + ") "
-                        + v.velocity_type() + " " + v.flow_direction() + ": " + v.value()));
+                        + v.velocity_type() + " " + v.flow_direction() + ": " + v.value()
+                        + " " + v.units()));
 
         model.stenosis().forEach(s ->
                 System.out.println("  Stenosis " + s.laterality() + " " + s.vessel()

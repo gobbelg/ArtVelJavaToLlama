@@ -14,8 +14,9 @@ import java.sql.*;
  * This revision matches the XML-aligned JSON schema:
  *   - ICA_CCA_ratio   : laterality, ratio_value               (notation removed)
  *   - flow_velocities : vessel, laterality, vessel_location,
- *                       velocity_type, flow_direction, value  (units removed,
- *                                                              flow_direction added)
+ *                       velocity_type, flow_direction, value, units
+ *                                                             (flow_direction added; units
+ *                                                              restored as cm/s|m/s|Other|Unspecified)
  *   - stenosis        : vessel, laterality, percentage        (additional_description removed)
  *   - plaque_and_intimal_thickening is no longer produced and is no longer imported.
  *
@@ -23,11 +24,13 @@ import java.sql.*;
  *
  *   -- New column required by this importer:
  *   ALTER TABLE ggLLM.FlowVelocity ADD FlowDirection NVARCHAR(50) NULL;
+ *   -- Units is written again (values: cm/s, m/s, Other, Unspecified). If the column was
+ *   -- dropped, re-add it; if it still exists, make sure it is wide enough:
+ *   -- ALTER TABLE ggLLM.FlowVelocity ADD Units NVARCHAR(50) NULL;
  *
  *   -- Columns this importer no longer writes. They must either be dropped or be
  *   -- nullable / have a default, otherwise the INSERTs below will fail:
  *   --   ggLLM.IcaCcaRatio.Notation
- *   --   ggLLM.FlowVelocity.Units
  *   --   ggLLM.Stenosis.AdditionalDescription
  *   -- e.g.  ALTER TABLE ggLLM.IcaCcaRatio ALTER COLUMN Notation NVARCHAR(200) NULL;
  *   -- (ggLLM.PlaqueAndIntimalThickening is simply left unpopulated.)
@@ -64,8 +67,8 @@ public class VascularDbImporter {
 
     private static final String INSERT_VELOCITY =
             "INSERT INTO ggLLM.FlowVelocity " +
-            "(DocumentId, Vessel, Laterality, VesselLocation, VelocityType, FlowDirection, Value) " +
-            "VALUES (?, ?, ?, ?, ?, ?, ?)";
+            "(DocumentId, Vessel, Laterality, VesselLocation, VelocityType, FlowDirection, Value, Units) " +
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
 
     private static final String INSERT_STENOSIS =
             "INSERT INTO ggLLM.Stenosis " +
@@ -167,6 +170,7 @@ public class VascularDbImporter {
                 ps.setString(5, v.path("velocity_type").asText("NoInformation"));
                 ps.setString(6, v.path("flow_direction").asText("NoInformation"));
                 ps.setString(7, v.path("value").asText("NoInformation"));
+                ps.setString(8, v.path("units").asText("NoInformation"));
                 ps.addBatch();
             }
             ps.executeBatch();
