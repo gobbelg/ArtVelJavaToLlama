@@ -87,16 +87,19 @@ public class LlamaVascularExtractor {
     // -------------------------------------------------------------------------
     // HTTP TIMEOUTS
     // -------------------------------------------------------------------------
-    // CONNECT_TIMEOUT: time allowed to open the connection to llama-server.
-    // REQUEST_TIMEOUT: time allowed for the WHOLE request (prefill + generation).
+    // connect timeout: time allowed to open the connection to llama-server.
+    // request timeout: time allowed for the WHOLE request (prefill + generation).
     // Without it a stalled server would hang its worker thread, and therefore
     // analyzeDocumentsParallel, forever. A request that times out fails that one
     // document (it lands in the _failed list) and the run continues.
     // Choose it well above the slowest legitimate request: up to 8,192 generated
     // tokens at roughly 10 tokens/second per slot is about 14 minutes.
     // -------------------------------------------------------------------------
-    private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(30);
-    public static final Duration REQUEST_TIMEOUT = Duration.ofMinutes(20);
+    // Both are now instance settings (see the 6-argument constructor and the
+    // http.* keys of the settings file). These are the defaults used by the
+    // 4-argument constructor.
+    private static final Duration DEFAULT_CONNECT_TIMEOUT = Duration.ofSeconds(30);
+    private static final Duration DEFAULT_REQUEST_TIMEOUT = Duration.ofMinutes(20);
 
     // -------------------------------------------------------------------------
     // THINKING / REASONING (Gemma 4)
@@ -149,10 +152,9 @@ public class LlamaVascularExtractor {
 
     // HTTP/1.1 is pinned because llama-server does not speak HTTP/2; the default
     // client would first attempt an h2c upgrade on every connection.
-    private final HttpClient httpClient = HttpClient.newBuilder()
-            .version(HttpClient.Version.HTTP_1_1)
-            .connectTimeout(CONNECT_TIMEOUT)
-            .build();
+    private final HttpClient httpClient;
+    private final Duration connectTimeout;
+    private final Duration requestTimeout;
 
     // Per-document diagnostic notes (retry used, repair used, reasoning output,
     // repeated entries). A document is processed start to finish on one thread, so
@@ -172,6 +174,23 @@ public class LlamaVascularExtractor {
      */
     public LlamaVascularExtractor(String serverUrl, String modelName, String systemPrompt,
             int slotSizeTokens) {
+        this(serverUrl, modelName, systemPrompt, slotSizeTokens,
+                DEFAULT_REQUEST_TIMEOUT, DEFAULT_CONNECT_TIMEOUT);
+    }
+
+    /**
+     * @param requestTimeout time allowed for one whole request (prefill + generation);
+     *                       raise it on slow CPU-only machines
+     * @param connectTimeout time allowed to open the connection to llama-server
+     */
+    public LlamaVascularExtractor(String serverUrl, String modelName, String systemPrompt,
+            int slotSizeTokens, Duration requestTimeout, Duration connectTimeout) {
+        this.requestTimeout = requestTimeout;
+        this.connectTimeout = connectTimeout;
+        this.httpClient = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
+                .connectTimeout(connectTimeout)
+                .build();
         this.serverUrl    = serverUrl;
         this.modelName    = modelName;
         this.systemPrompt = systemPrompt;
@@ -893,7 +912,7 @@ public class LlamaVascularExtractor {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .header("Content-Type", "application/json")
-                .timeout(REQUEST_TIMEOUT)
+                .timeout(requestTimeout)
                 .POST(HttpRequest.BodyPublishers.ofString(json))
                 .build();
 
@@ -902,8 +921,8 @@ public class LlamaVascularExtractor {
             response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
         } catch (HttpTimeoutException e) {
             throw new RuntimeException("No response from llama-server within the HTTP timeout ("
-                    + "connect " + CONNECT_TIMEOUT.toSeconds() + " s, request "
-                    + REQUEST_TIMEOUT.toMinutes() + " min): " + e.getMessage(), e);
+                    + "connect " + connectTimeout.toSeconds() + " s, request "
+                    + requestTimeout.toMinutes() + " min): " + e.getMessage(), e);
         }
 
         if (response.statusCode() < 200 || response.statusCode() >= 300) {

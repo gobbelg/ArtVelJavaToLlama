@@ -29,7 +29,11 @@ public class VascularRunner {
 
 	private final static JFrame mainFrame = new JFrame();
 
-	public static void main(String[] args) {
+	public static void main(String[] rawArgs) {
+
+		// Removes "--config=PATH" from the arguments and records it for AppSettings
+		// (same effect as -Dvascular.config=PATH).
+		final String[] args = AppSettings.consumeConfigArgument(rawArgs);
 
 		SwingUtilities.invokeLater(new Runnable() {
 
@@ -94,7 +98,7 @@ public class VascularRunner {
 				// NEW: run the throughput sweep. Any trailing program arguments
 				// after the RunType are forwarded as the THREADS values to measure
 				// (e.g. "RUN_THROUGHPUT_SWEEP 3" measures only THREADS=3). With no
-				// extra arguments the harness sweeps its default SWEEP_VALUES.
+				// extra arguments the harness sweeps its harness.sweep-values.
 				case RUN_THROUGHPUT_SWEEP: {
 					try {
 						String[] forwarded = (args.length > 1)

@@ -22,43 +22,32 @@ import java.util.stream.Stream;
 
 public class MainVascular {
 
-	private static final String CORPUS_DIRECTORY_PATH = "P:/ORD_Nguyen_202206062D/Glenn/DataAnalysis/LLMs/TestCorpus2";
-
-	// Only files with this extension (case-insensitive) are processed. Prevents
-	// stray non-report files (Thumbs.db, .log, etc.) in the corpus directory from
-	// being sent to the model. Set to "" to disable the filter.
-	private static final String DOCUMENT_EXTENSION = ".txt";
+	// Everything that differs between computers (corpus directory, document
+	// extension, server paths, --ctx-size, threads, default parallel, second-pass
+	// behavior, HTTP timeouts) comes from the settings file chosen at start-up;
+	// see AppSettings. It is loaded at the top of main().
+	private static AppSettings settings;
 
 	// -------------------------------------------------------------------------
 	// SERVER AND PASS SETTINGS
 	// -------------------------------------------------------------------------
 	// This program starts and stops llama-server itself (LlamaServerManager),
-	// using LlamaServerConfig.vaDefaults(), which reproduces the command line
-	// you used to launch it by hand. Edit paths and flags there.
+	// using the server.* values of the settings file, which reproduce the command
+	// line you used to launch it by hand. Edit paths and flags there.
 	//
 	// For every pass, client threads = server slots (--parallel). More threads
 	// than slots only queue on the server; fewer leave slots idle.
 	//
-	// Slot size = --ctx-size / --parallel, so with --ctx-size fixed at 49152:
+	// Slot size = --ctx-size / --parallel. For example, with --ctx-size 49152:
 	//     --parallel 4 -> 12288 tokens per slot   (first pass)
 	//     --parallel 1 -> 49152 tokens per slot   (second pass)
 	// The KV-cache (VRAM) cost is the same either way; only concurrency changes.
 	//
 	// Reports too long for the first-pass slot size (see ContextBudget) are
-	// skipped, not failed. If AUTO_SECOND_PASS is true, the server is restarted
-	// with SECOND_PASS_PARALLEL slots and those reports are processed then.
+	// skipped, not failed. If run.auto-second-pass is true, the server is restarted
+	// with run.second-pass-parallel slots and those reports are processed then.
 	// Anything still too long is written to <output>_too_long.txt.
 	// -------------------------------------------------------------------------
-	// MODIFIED 10-29-26
-//	private static final int DEFAULT_PARALLEL = 4;
-//	private static final boolean AUTO_SECOND_PASS = true;
-//	private static final int SECOND_PASS_PARALLEL = 1;
-//	private static final String MODEL_NAME = "local-model";
-	
-	private static final int DEFAULT_PARALLEL = 1;
-	private static final boolean AUTO_SECOND_PASS = false;
-	private static final int SECOND_PASS_PARALLEL = 1;
-	private static final String MODEL_NAME = "local-model";
 
 	// -------------------------------------------------------------------------
 	// SYSTEM PROMPT — fixed instructions, schema, and worked example.
@@ -197,6 +186,17 @@ public class MainVascular {
 		// closing a Scanner on System.in also closes System.in itself.
 		Scanner scanner = new Scanner(System.in);
 
+		// Settings for this computer: -Dvascular.config=..., VASCULAR_CONFIG, or a prompt.
+		try {
+			settings = AppSettings.load(scanner);
+		} catch (IOException | IllegalArgumentException e) {
+			System.err.println("Unable to load the settings file: " + e.getLocalizedMessage());
+			System.exit(-1);
+			return;
+		}
+		System.out.println(settings.describe());
+		System.out.println();
+
 		Path outputFile = getOutputFile(scanner);
 
 		List<Path> documentPaths;
@@ -271,12 +271,12 @@ public class MainVascular {
 					failedDocuments.addAll(passResult.failed);
 					pending = passResult.tooLong;
 
-					if (pending.isEmpty() || !AUTO_SECOND_PASS || parallel <= SECOND_PASS_PARALLEL) {
+					if (pending.isEmpty() || !settings.autoSecondPass() || parallel <= settings.secondPassParallel()) {
 						break;
 					}
 					ctx.log(pending.size() + " document(s) were too long for the current slot size; "
-							+ "restarting the server with --parallel " + SECOND_PASS_PARALLEL + " for a second pass.");
-					parallel = SECOND_PASS_PARALLEL;
+							+ "restarting the server with --parallel " + settings.secondPassParallel() + " for a second pass.");
+					parallel = settings.secondPassParallel();
 					pass++;
 				}
 			} catch (Exception e) {
@@ -332,7 +332,7 @@ public class MainVascular {
 			Path serverLogFile) throws Exception {
 
 		// --ctx-size stays at the configured total; fewer slots means larger slots.
-		LlamaServerConfig config = LlamaServerConfig.vaDefaults().withParallel(parallel);
+		LlamaServerConfig config = settings.serverConfig().withParallel(parallel);
 		final int totalDocs = documents.size();
 		ctx.log("=== Pass " + pass + ": " + totalDocs + " documents; " + config.describe()
 				+ "; client threads = " + parallel + " ===");
@@ -346,8 +346,8 @@ public class MainVascular {
 			server.start();
 			final int slotSize = server.slotSize();
 
-			LlamaVascularExtractor extractor = new LlamaVascularExtractor(server.baseUrl(), MODEL_NAME,
-					SYSTEM_PROMPT, slotSize);
+			LlamaVascularExtractor extractor = new LlamaVascularExtractor(server.baseUrl(), settings.modelName(),
+					SYSTEM_PROMPT, slotSize, settings.requestTimeout(), settings.connectTimeout());
 			ctx.log(extractor.getBudget().describe());
 
 			final long passBegin = System.currentTimeMillis();
@@ -553,17 +553,25 @@ public class MainVascular {
 		return outputFile;
 	}
 
-	// Either every document in CORPUS_DIRECTORY_PATH, or the paths listed in a text
+	// Either every document in corpus.directory (settings file), or the paths listed in a text
 	// file (one per line; blank lines and lines starting with # are ignored). The
 	// _too_long.txt and _failed.txt files written by a run are valid list files.
 	private static List<Path> getDocumentPaths(Scanner scanner) throws IOException {
 
-		System.out.print("Enter the path of a document list file (one path per line), or press Enter to "
-				+ "process every " + DOCUMENT_EXTENSION + " file in " + CORPUS_DIRECTORY_PATH + ": ");
+		Path corpus = settings.corpusDirectory();
+		if (corpus == null) {
+			System.out.print("Enter the corpus directory (no corpus.directory in the settings file): ");
+			corpus = Paths.get(stripQuotes(scanner.nextLine().trim()));
+			System.out.print("Enter the path of a document list file (one path per line), or press Enter to "
+					+ "process every " + settings.documentExtension() + " file in that directory: ");
+		} else {
+			System.out.print("Enter the path of a document list file (one path per line), or press Enter to "
+					+ "process every " + settings.documentExtension() + " file in " + corpus + ": ");
+		}
 		String input = stripQuotes(scanner.nextLine().trim());
 
 		if (input.isEmpty()) {
-			return getFilePaths(CORPUS_DIRECTORY_PATH, false);
+			return getFilePaths(corpus.toString(), false, settings.documentExtension());
 		}
 
 		Path listFile = Paths.get(input);
@@ -604,11 +612,12 @@ public class MainVascular {
 
 	private static int getParallel(Scanner scanner) {
 		while (true) {
-			System.out.print("Number of parallel server slots for the first pass [" + DEFAULT_PARALLEL
-					+ "] (slot size = 49152 / slots; use 1 to run long reports): ");
+			System.out.print("Number of parallel server slots for the first pass [" + settings.defaultParallel()
+					+ "] (slot size = " + settings.serverConfig().ctxSize()
+					+ " / slots; use 1 to run long reports): ");
 			String input = scanner.nextLine().trim();
 			if (input.isEmpty()) {
-				return DEFAULT_PARALLEL;
+				return settings.defaultParallel();
 			}
 			try {
 				int n = Integer.parseInt(input);
@@ -689,7 +698,7 @@ public class MainVascular {
 
 	/**
 	 * Returns the document file paths in a directory, filtered to
-	 * DOCUMENT_EXTENSION and sorted by path. Sorting makes the order (and
+	 * documentExtension (corpus.extension in the settings file) and sorted by path. Sorting makes the order (and
 	 * therefore the throughput harness's sample) deterministic; Files.walk order
 	 * is otherwise filesystem-dependent.
 	 *
@@ -700,6 +709,11 @@ public class MainVascular {
 	 * @throws IllegalArgumentException If the path is invalid or not a directory.
 	 */
 	public static List<Path> getFilePaths(String dirPath, boolean recursive) throws IOException {
+		return getFilePaths(dirPath, recursive, ".txt");
+	}
+
+	public static List<Path> getFilePaths(String dirPath, boolean recursive, String documentExtension)
+			throws IOException {
 		Path directory = Paths.get(dirPath);
 
 		if (!Files.exists(directory)) {
@@ -710,7 +724,7 @@ public class MainVascular {
 		}
 
 		int depth = recursive ? Integer.MAX_VALUE : 1;
-		String ext = DOCUMENT_EXTENSION.toLowerCase();
+		String ext = documentExtension.toLowerCase();
 
 		try (Stream<Path> paths = Files.walk(directory, depth)) {
 			return paths.filter(Files::isRegularFile)

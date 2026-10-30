@@ -18,16 +18,17 @@ import core.VascularModels.VascularResult;
  * stops improving throughput on the NVIDIA A2.
  *
  * The harness starts and stops llama-server itself (LlamaServerManager) for each
- * value N it measures, using LlamaServerConfig.vaDefaults().withSlots(N, 12288):
+ * value N it measures, using settings.serverConfig().withSlots(N, harness.slot-size):
  *   - client THREADS = N = server --parallel (extra threads would only queue),
- *   - --ctx-size = N x 12288, so every slot keeps 12288 tokens regardless of N
+ *   - --ctx-size = N x harness.slot-size, so every slot keeps the same size regardless of N
  *     (otherwise context per slot and concurrency change together and the
  *     comparison is confounded).
  * Watch VRAM while it runs: nvidia-smi --query-gpu=utilization.gpu,memory.used
  * --format=csv -l 2   (keep it under the ~15 GB ceiling).
  *
  * Pass values as program arguments (e.g. "3") to measure only those; with no
- * arguments SWEEP_VALUES is used. The server must NOT already be running on the
+ * arguments harness.sweep-values is used.
+ * Select the settings file with -Dvascular.config=..., VASCULAR_CONFIG, or the prompt. The server must NOT already be running on the
  * configured port (the manager refuses to start in that case).
  *
  * Documents longer than the slot budget are skipped (reported separately), so
@@ -40,33 +41,33 @@ import core.VascularModels.VascularResult;
 public class VascularThroughputHarness {
 
     // -------------------------------------------------------------------------
-    // HARNESS PARAMETERS (TEST THESE)
+    // HARNESS PARAMETERS now come from the settings file (AppSettings):
+    //   harness.sweep-values  THREADS values to sweep when no argument is given
+    //   harness.sample-size   documents per measured run (same sample for every run;
+    //                         the corpus listing is sorted, so it is reproducible)
+    //   harness.warm-up       process and discard one document before timing each
+    //                         setting (prompt-cache priming, connection set-up)
+    //   harness.slot-size     tokens per slot, held constant across the sweep
     // -------------------------------------------------------------------------
-    // THREADS values to sweep when no command-line argument is supplied.
-    private static final int[] SWEEP_VALUES = { 2, 3, 4 };
-
-    // Number of documents from the corpus to use for each measured run. Keep
-    // this modest (enough to average out per-document variance, small enough to
-    // run quickly). All runs use the SAME sample for a fair comparison. The
-    // corpus listing is sorted, so the sample is identical between program runs.
-    private static final int SAMPLE_SIZE = 20;
-
-    // One warm-up document is processed and discarded before timing each setting
-    // so that one-time costs (prompt-cache priming of the system prefix, JIT
-    // warm-up, first-request connection setup) do not skew the measurement.
-    private static final boolean WARM_UP = true;
-
-    private static final String MODEL_NAME = "local-model";
-
-    // Tokens per slot held constant across the sweep.
-    private static final int SLOT_SIZE = 12288;
 
     public static void main(String[] args) throws Exception {
 
         // Not closed on purpose: closing a Scanner also closes System.in.
         Scanner scanner = new Scanner(System.in);
-        System.out.print("Enter the corpus directory path to sample from: ");
-        String corpusDir = scanner.nextLine().trim();
+        AppSettings settings = AppSettings.load(scanner);
+        System.out.println(settings.describe());
+        System.out.println();
+        final int slotSizeTokens = settings.harnessSlotSize();
+        final boolean warmUp = settings.harnessWarmUp();
+
+        String corpusDir;
+        if (settings.corpusDirectory() != null) {
+            corpusDir = settings.corpusDirectory().toString();
+            System.out.println("Corpus directory: " + corpusDir);
+        } else {
+            System.out.print("Enter the corpus directory path to sample from: ");
+            corpusDir = scanner.nextLine().trim();
+        }
 
         // Determine which THREADS values to measure.
         int[] sweep;
@@ -76,26 +77,26 @@ public class VascularThroughputHarness {
                 sweep[i] = Integer.parseInt(args[i].trim());
             }
         } else {
-            sweep = SWEEP_VALUES;
+            sweep = settings.sweepValues();
         }
 
         // Load and sample the corpus once; reuse the identical sample for every
         // setting so differences reflect concurrency, not document selection.
-        List<Path> allDocs = MainVascular.getFilePaths(corpusDir, false);
+        List<Path> allDocs = MainVascular.getFilePaths(corpusDir, false, settings.documentExtension());
         if (allDocs.isEmpty()) {
             System.err.println("No documents found in: " + corpusDir);
             return;
         }
-        int sampleSize = Math.min(SAMPLE_SIZE, allDocs.size());
+        int sampleSize = Math.min(settings.harnessSampleSize(), allDocs.size());
         List<Path> sample = new ArrayList<>(allDocs.subList(0, sampleSize));
         Path warmUpDoc = sample.get(0);
 
         System.out.println("Throughput sweep");
         System.out.println("  Sample size:       " + sampleSize + " documents");
-        System.out.println("  Warm-up per run:   " + WARM_UP);
+        System.out.println("  Warm-up per run:   " + warmUp);
         System.out.println("  THREADS values:    " + java.util.Arrays.toString(sweep));
         System.out.println("  The server is started automatically for each value (--parallel N,");
-        System.out.println("  --ctx-size = N x " + SLOT_SIZE + ").");
+        System.out.println("  --ctx-size = N x " + slotSizeTokens + ").");
         System.out.println();
 
         List<String> summaryRows = new ArrayList<>();
@@ -104,16 +105,17 @@ public class VascularThroughputHarness {
         Path serverLog = Paths.get(corpusDir).toAbsolutePath().resolve("harness_server.log");
 
         for (int threads : sweep) {
-            LlamaServerConfig config = LlamaServerConfig.vaDefaults().withSlots(threads, SLOT_SIZE);
+            LlamaServerConfig config = settings.serverConfig().withSlots(threads, slotSizeTokens);
             System.out.println("=== Measuring THREADS = " + threads + "  (" + config.describe() + ") ===");
 
             try (LlamaServerManager server = new LlamaServerManager(config, serverLog)) {
                 server.start();
 
                 LlamaVascularExtractor extractor = new LlamaVascularExtractor(
-                        server.baseUrl(), MODEL_NAME, MainVascular.SYSTEM_PROMPT, server.slotSize());
+                        server.baseUrl(), settings.modelName(), MainVascular.SYSTEM_PROMPT, server.slotSize(),
+                        settings.requestTimeout(), settings.connectTimeout());
 
-                if (WARM_UP) {
+                if (warmUp) {
                     try {
                         extractor.analyzeDocument(warmUpDoc); // discarded
                     } catch (Exception e) {

@@ -43,7 +43,6 @@ import java.util.regex.Pattern;
  */
 public class LlamaServerManager implements AutoCloseable {
 
-    private static final Duration STARTUP_TIMEOUT = Duration.ofMinutes(15);
     private static final long POLL_MILLIS = 1000;
     private static final int TAIL_LINES = 40;
 
@@ -97,8 +96,8 @@ public class LlamaServerManager implements AutoCloseable {
         if (isPortInUse()) {
             throw new IllegalStateException("Something is already listening on " + config.baseUrl()
                     + ". Stop that llama-server first: its --ctx-size/--parallel are unknown, so the "
-                    + "slot size could not be trusted. (Close its console window, or end llama-server.exe "
-                    + "in Task Manager.)");
+                    + "slot size could not be trusted. (Close its console window, or end the llama-server process in "
+                    + "Task Manager / Activity Monitor.)");
         }
 
         Path logDir = logFile.toAbsolutePath().getParent();
@@ -164,7 +163,8 @@ public class LlamaServerManager implements AutoCloseable {
     // -------------------------------------------------------------------------
 
     private void waitUntilReady() throws IOException, InterruptedException {
-        long deadline = System.nanoTime() + STARTUP_TIMEOUT.toNanos();
+        Duration startupTimeout = Duration.ofMinutes(config.startupTimeoutMinutes());
+        long deadline = System.nanoTime() + startupTimeout.toNanos();
         while (System.nanoTime() < deadline) {
             if (!process.isAlive()) {
                 Thread.sleep(500); // let the log pump drain
@@ -177,7 +177,7 @@ public class LlamaServerManager implements AutoCloseable {
             }
             Thread.sleep(POLL_MILLIS);
         }
-        throw new IOException("llama-server was not ready within " + STARTUP_TIMEOUT.toMinutes()
+        throw new IOException("llama-server was not ready within " + startupTimeout.toMinutes()
                 + " minutes. Last log lines:\n" + tailText());
     }
 
