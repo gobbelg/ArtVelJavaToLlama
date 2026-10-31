@@ -1,0 +1,1320 @@
+{
+  "ICA_CCA_ratio" : [ {
+    "laterality" : "Right",
+    "source_text" : "ICA/CCA PSV ratio: 0.90",
+    "ratio_value" : "0.90",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1703,
+      "end_offset" : 1707,
+      "text_before" : "  ICA/CCA PSV ratio:     ",
+      "matched_text" : "0.90",
+      "text_after" : "                0.90\n  Ve",
+      "ambiguous" : false,
+      "match_method" : "WHITESPACE_NORMALIZED"
+    }
+  }, {
+    "laterality" : "Left",
+    "source_text" : "ICA/CCA PSV ratio: 0.90",
+    "ratio_value" : "0.90",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1703,
+      "end_offset" : 1707,
+      "text_before" : "  ICA/CCA PSV ratio:     ",
+      "matched_text" : "0.90",
+      "text_after" : "                0.90\n  Ve",
+      "ambiguous" : false,
+      "match_method" : "WHITESPACE_NORMALIZED+REUSED"
+    }
+  } ],
+  "flow_velocities" : [ {
+    "vessel" : "CCA",
+    "laterality" : "Right",
+    "vessel_location" : "distal",
+    "velocity_type" : "PSV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "CCA (distal)      82",
+    "value" : "82",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1379,
+      "end_offset" : 1381,
+      "text_before" : " EDV\n  CCA (distal)      ",
+      "matched_text" : "82",
+      "text_after" : "      21            79   ",
+      "ambiguous" : false,
+      "match_method" : "EXACT"
+    }
+  }, {
+    "vessel" : "CCA",
+    "laterality" : "Right",
+    "vessel_location" : "distal",
+    "velocity_type" : "EDV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "CCA (distal)      82",
+    "value" : "21",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1361,
+      "end_offset" : 1381,
+      "text_before" : "           PSV     EDV\n  ",
+      "matched_text" : "CCA (distal)      82",
+      "text_after" : "      21            79   ",
+      "ambiguous" : false,
+      "match_method" : "EXACT+SNIPPET_ONLY"
+    }
+  }, {
+    "vessel" : "ICA",
+    "laterality" : "Right",
+    "vessel_location" : "proximal",
+    "velocity_type" : "PSV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ICA (proximal)    74",
+    "value" : "74",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1432,
+      "end_offset" : 1434,
+      "text_before" : "  20\n  ICA (proximal)    ",
+      "matched_text" : "74",
+      "text_after" : "      27            71   ",
+      "ambiguous" : false,
+      "match_method" : "EXACT"
+    }
+  }, {
+    "vessel" : "ICA",
+    "laterality" : "Right",
+    "vessel_location" : "proximal",
+    "velocity_type" : "EDV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ICA (proximal)    74",
+    "value" : "27",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1414,
+      "end_offset" : 1434,
+      "text_before" : "            79      20\n  ",
+      "matched_text" : "ICA (proximal)    74",
+      "text_after" : "      27            71   ",
+      "ambiguous" : false,
+      "match_method" : "EXACT+SNIPPET_ONLY"
+    }
+  }, {
+    "vessel" : "ICA",
+    "laterality" : "Right",
+    "vessel_location" : "mid",
+    "velocity_type" : "PSV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ICA (mid)         68",
+    "value" : "68",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1485,
+      "end_offset" : 1487,
+      "text_before" : "  26\n  ICA (mid)         ",
+      "matched_text" : "68",
+      "text_after" : "      25            66   ",
+      "ambiguous" : false,
+      "match_method" : "EXACT"
+    }
+  }, {
+    "vessel" : "ICA",
+    "laterality" : "Right",
+    "vessel_location" : "mid",
+    "velocity_type" : "EDV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ICA (mid)         68",
+    "value" : "25",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1467,
+      "end_offset" : 1487,
+      "text_before" : "            71      26\n  ",
+      "matched_text" : "ICA (mid)         68",
+      "text_after" : "      25            66   ",
+      "ambiguous" : false,
+      "match_method" : "EXACT+SNIPPET_ONLY"
+    }
+  }, {
+    "vessel" : "ICA",
+    "laterality" : "Right",
+    "vessel_location" : "distal",
+    "velocity_type" : "PSV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ICA (distal)      62",
+    "value" : "62",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1538,
+      "end_offset" : 1540,
+      "text_before" : "  24\n  ICA (distal)      ",
+      "matched_text" : "62",
+      "text_after" : "      23            60   ",
+      "ambiguous" : false,
+      "match_method" : "EXACT"
+    }
+  }, {
+    "vessel" : "ICA",
+    "laterality" : "Right",
+    "vessel_location" : "distal",
+    "velocity_type" : "EDV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ICA (distal)      62",
+    "value" : "23",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1520,
+      "end_offset" : 1540,
+      "text_before" : "            66      24\n  ",
+      "matched_text" : "ICA (distal)      62",
+      "text_after" : "      23            60   ",
+      "ambiguous" : false,
+      "match_method" : "EXACT+SNIPPET_ONLY"
+    }
+  }, {
+    "vessel" : "ECA",
+    "laterality" : "Right",
+    "vessel_location" : "InsufficientInformation",
+    "velocity_type" : "PSV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ECA               88",
+    "value" : "88",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1591,
+      "end_offset" : 1593,
+      "text_before" : "  22\n  ECA               ",
+      "matched_text" : "88",
+      "text_after" : "      12            91   ",
+      "ambiguous" : false,
+      "match_method" : "EXACT"
+    }
+  }, {
+    "vessel" : "ECA",
+    "laterality" : "Right",
+    "vessel_location" : "InsufficientInformation",
+    "velocity_type" : "EDV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ECA               88",
+    "value" : "12",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1573,
+      "end_offset" : 1593,
+      "text_before" : "            60      22\n  ",
+      "matched_text" : "ECA               88",
+      "text_after" : "      12            91   ",
+      "ambiguous" : false,
+      "match_method" : "EXACT+SNIPPET_ONLY"
+    }
+  }, {
+    "vessel" : "CCA",
+    "laterality" : "Left",
+    "vessel_location" : "distal",
+    "velocity_type" : "PSV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "CCA (distal)      79",
+    "value" : "79",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1401,
+      "end_offset" : 1403,
+      "text_before" : "   82      21            ",
+      "matched_text" : "79",
+      "text_after" : "      20\n  ICA (proximal)",
+      "ambiguous" : false,
+      "match_method" : "VALUE_ONLY"
+    }
+  }, {
+    "vessel" : "CCA",
+    "laterality" : "Left",
+    "vessel_location" : "distal",
+    "velocity_type" : "EDV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "CCA (distal)      79",
+    "value" : "20",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1409,
+      "end_offset" : 1411,
+      "text_before" : "   21            79      ",
+      "matched_text" : "20",
+      "text_after" : "\n  ICA (proximal)    74  ",
+      "ambiguous" : false,
+      "match_method" : "VALUE_ONLY"
+    }
+  }, {
+    "vessel" : "ICA",
+    "laterality" : "Left",
+    "vessel_location" : "proximal",
+    "velocity_type" : "PSV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ICA (proximal)    71",
+    "value" : "71",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1454,
+      "end_offset" : 1456,
+      "text_before" : "   74      27            ",
+      "matched_text" : "71",
+      "text_after" : "      26\n  ICA (mid)     ",
+      "ambiguous" : false,
+      "match_method" : "VALUE_ONLY"
+    }
+  }, {
+    "vessel" : "ICA",
+    "laterality" : "Left",
+    "vessel_location" : "proximal",
+    "velocity_type" : "EDV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ICA (proximal)    71",
+    "value" : "26",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1462,
+      "end_offset" : 1464,
+      "text_before" : "   27            71      ",
+      "matched_text" : "26",
+      "text_after" : "\n  ICA (mid)         68  ",
+      "ambiguous" : false,
+      "match_method" : "VALUE_ONLY"
+    }
+  }, {
+    "vessel" : "ICA",
+    "laterality" : "Left",
+    "vessel_location" : "mid",
+    "velocity_type" : "PSV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ICA (mid)         66",
+    "value" : "66",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1507,
+      "end_offset" : 1509,
+      "text_before" : "   68      25            ",
+      "matched_text" : "66",
+      "text_after" : "      24\n  ICA (distal)  ",
+      "ambiguous" : false,
+      "match_method" : "VALUE_ONLY"
+    }
+  }, {
+    "vessel" : "ICA",
+    "laterality" : "Left",
+    "vessel_location" : "mid",
+    "velocity_type" : "EDV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ICA (mid)         66",
+    "value" : "24",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1515,
+      "end_offset" : 1517,
+      "text_before" : "   25            66      ",
+      "matched_text" : "24",
+      "text_after" : "\n  ICA (distal)      62  ",
+      "ambiguous" : false,
+      "match_method" : "VALUE_ONLY"
+    }
+  }, {
+    "vessel" : "ICA",
+    "laterality" : "Left",
+    "vessel_location" : "distal",
+    "velocity_type" : "PSV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ICA (distal)      60",
+    "value" : "60",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1560,
+      "end_offset" : 1562,
+      "text_before" : "   62      23            ",
+      "matched_text" : "60",
+      "text_after" : "      22\n  ECA           ",
+      "ambiguous" : false,
+      "match_method" : "VALUE_ONLY"
+    }
+  }, {
+    "vessel" : "ICA",
+    "laterality" : "Left",
+    "vessel_location" : "distal",
+    "velocity_type" : "EDV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ICA (distal)      60",
+    "value" : "22",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1568,
+      "end_offset" : 1570,
+      "text_before" : "   23            60      ",
+      "matched_text" : "22",
+      "text_after" : "\n  ECA               88  ",
+      "ambiguous" : false,
+      "match_method" : "VALUE_ONLY"
+    }
+  }, {
+    "vessel" : "ECA",
+    "laterality" : "Left",
+    "vessel_location" : "InsufficientInformation",
+    "velocity_type" : "PSV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ECA               91",
+    "value" : "91",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1613,
+      "end_offset" : 1615,
+      "text_before" : "   88      12            ",
+      "matched_text" : "91",
+      "text_after" : "      13\n  Vertebral     ",
+      "ambiguous" : false,
+      "match_method" : "VALUE_ONLY"
+    }
+  }, {
+    "vessel" : "ECA",
+    "laterality" : "Left",
+    "vessel_location" : "InsufficientInformation",
+    "velocity_type" : "EDV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ECA               91",
+    "value" : "13",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1621,
+      "end_offset" : 1623,
+      "text_before" : "   12            91      ",
+      "matched_text" : "13",
+      "text_after" : "\n  Vertebral         52  ",
+      "ambiguous" : false,
+      "match_method" : "VALUE_ONLY"
+    }
+  } ],
+  "stenosis" : [ {
+    "vessel" : "ICA",
+    "laterality" : "InsufficientInformation",
+    "source_text" : "hemodynamically significant stenosis (0% stenosis, bilateral ICAs).",
+    "percentage" : "0%",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1911,
+      "end_offset" : 1913,
+      "text_before" : "ly significant stenosis (",
+      "matched_text" : "0%",
+      "text_after" : " stenosis, bilateral ICAs",
+      "ambiguous" : false,
+      "match_method" : "EXACT"
+    }
+  } ],
+  "documentPathString" : "/Users/gobbelg/Documents/LLMs/TestCorpus/synthetic/report1_normal_carotid_duplex.txt"
+}
+
+{
+  "ICA_CCA_ratio" : [ {
+    "laterality" : "Right",
+    "source_text" : "ICA/CCA PSV ratio: 6.06",
+    "ratio_value" : "6.06",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 2070,
+      "end_offset" : 2074,
+      "text_before" : "  ICA/CCA PSV ratio:     ",
+      "matched_text" : "6.06",
+      "text_after" : "                1.20\n  Ve",
+      "ambiguous" : false,
+      "match_method" : "WHITESPACE_NORMALIZED"
+    }
+  }, {
+    "laterality" : "Left",
+    "source_text" : "ICA/CCA PSV ratio: 1.20",
+    "ratio_value" : "1.20",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 2090,
+      "end_offset" : 2094,
+      "text_before" : "     6.06                ",
+      "matched_text" : "1.20",
+      "text_after" : "\n  Vertebral flow directi",
+      "ambiguous" : false,
+      "match_method" : "VALUE_ONLY"
+    }
+  } ],
+  "flow_velocities" : [ {
+    "vessel" : "CCA",
+    "laterality" : "Right",
+    "vessel_location" : "distal",
+    "velocity_type" : "PSV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "CCA (distal)      64",
+    "value" : "64",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1746,
+      "end_offset" : 1748,
+      "text_before" : " EDV\n  CCA (distal)      ",
+      "matched_text" : "64",
+      "text_after" : "      12            90   ",
+      "ambiguous" : false,
+      "match_method" : "EXACT"
+    }
+  }, {
+    "vessel" : "CCA",
+    "laterality" : "Right",
+    "vessel_location" : "distal",
+    "velocity_type" : "EDV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "CCA (distal)      64\n",
+    "value" : "12",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1728,
+      "end_offset" : 1748,
+      "text_before" : "           PSV     EDV\n  ",
+      "matched_text" : "CCA (distal)      64",
+      "text_after" : "      12            90   ",
+      "ambiguous" : false,
+      "match_method" : "WHITESPACE_NORMALIZED+SNIPPET_ONLY"
+    }
+  }, {
+    "vessel" : "ICA",
+    "laterality" : "Right",
+    "vessel_location" : "proximal",
+    "velocity_type" : "PSV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ICA (proximal)   388",
+    "value" : "388",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1798,
+      "end_offset" : 1801,
+      "text_before" : "   22\n  ICA (proximal)   ",
+      "matched_text" : "388",
+      "text_after" : "     142           108   ",
+      "ambiguous" : false,
+      "match_method" : "EXACT"
+    }
+  }, {
+    "vessel" : "ICA",
+    "laterality" : "Right",
+    "vessel_location" : "proximal",
+    "velocity_type" : "EDV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ICA (proximal)   388\n",
+    "value" : "142",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1781,
+      "end_offset" : 1801,
+      "text_before" : "            90      22\n  ",
+      "matched_text" : "ICA (proximal)   388",
+      "text_after" : "     142           108   ",
+      "ambiguous" : false,
+      "match_method" : "WHITESPACE_NORMALIZED+SNIPPET_ONLY"
+    }
+  }, {
+    "vessel" : "ICA",
+    "laterality" : "Right",
+    "vessel_location" : "mid",
+    "velocity_type" : "PSV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ICA (mid)        142",
+    "value" : "142",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1851,
+      "end_offset" : 1854,
+      "text_before" : "   34\n  ICA (mid)        ",
+      "matched_text" : "142",
+      "text_after" : "      52            86   ",
+      "ambiguous" : false,
+      "match_method" : "EXACT"
+    }
+  }, {
+    "vessel" : "ICA",
+    "laterality" : "Right",
+    "vessel_location" : "mid",
+    "velocity_type" : "EDV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ICA (mid)        142\n",
+    "value" : "52",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1834,
+      "end_offset" : 1854,
+      "text_before" : "           108      34\n  ",
+      "matched_text" : "ICA (mid)        142",
+      "text_after" : "      52            86   ",
+      "ambiguous" : false,
+      "match_method" : "WHITESPACE_NORMALIZED+SNIPPET_ONLY"
+    }
+  }, {
+    "vessel" : "ICA",
+    "laterality" : "Right",
+    "vessel_location" : "distal",
+    "velocity_type" : "PSV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ICA (distal)      48",
+    "value" : "48",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1905,
+      "end_offset" : 1907,
+      "text_before" : "  30\n  ICA (distal)      ",
+      "matched_text" : "48",
+      "text_after" : "      18            72   ",
+      "ambiguous" : false,
+      "match_method" : "EXACT"
+    }
+  }, {
+    "vessel" : "ICA",
+    "laterality" : "Right",
+    "vessel_location" : "distal",
+    "velocity_type" : "EDV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ICA (distal)      48\n",
+    "value" : "18",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1887,
+      "end_offset" : 1907,
+      "text_before" : "            86      30\n  ",
+      "matched_text" : "ICA (distal)      48",
+      "text_after" : "      18            72   ",
+      "ambiguous" : false,
+      "match_method" : "WHITESPACE_NORMALIZED+SNIPPET_ONLY"
+    }
+  }, {
+    "vessel" : "ECA",
+    "laterality" : "Right",
+    "vessel_location" : "InsufficientInformation",
+    "velocity_type" : "PSV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ECA              132",
+    "value" : "132",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1957,
+      "end_offset" : 1960,
+      "text_before" : "   26\n  ECA              ",
+      "matched_text" : "132",
+      "text_after" : "      20            98   ",
+      "ambiguous" : false,
+      "match_method" : "EXACT"
+    }
+  }, {
+    "vessel" : "ECA",
+    "laterality" : "Right",
+    "vessel_location" : "InsufficientInformation",
+    "velocity_type" : "EDV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ECA              132\n",
+    "value" : "20",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1940,
+      "end_offset" : 1960,
+      "text_before" : "            72      26\n  ",
+      "matched_text" : "ECA              132",
+      "text_after" : "      20            98   ",
+      "ambiguous" : false,
+      "match_method" : "WHITESPACE_NORMALIZED+SNIPPET_ONLY"
+    }
+  }, {
+    "vessel" : "CCA",
+    "laterality" : "Left",
+    "vessel_location" : "distal",
+    "velocity_type" : "PSV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "CCA (distal)      90",
+    "value" : "90",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1768,
+      "end_offset" : 1770,
+      "text_before" : "   64      12            ",
+      "matched_text" : "90",
+      "text_after" : "      22\n  ICA (proximal)",
+      "ambiguous" : false,
+      "match_method" : "VALUE_ONLY"
+    }
+  }, {
+    "vessel" : "CCA",
+    "laterality" : "Left",
+    "vessel_location" : "distal",
+    "velocity_type" : "EDV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "CCA (distal)      90\n",
+    "value" : "22",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1776,
+      "end_offset" : 1778,
+      "text_before" : "   12            90      ",
+      "matched_text" : "22",
+      "text_after" : "\n  ICA (proximal)   388  ",
+      "ambiguous" : false,
+      "match_method" : "VALUE_ONLY"
+    }
+  }, {
+    "vessel" : "ICA",
+    "laterality" : "Left",
+    "vessel_location" : "proximal",
+    "velocity_type" : "PSV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ICA (proximal)   108",
+    "value" : "108",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1820,
+      "end_offset" : 1823,
+      "text_before" : "   388     142           ",
+      "matched_text" : "108",
+      "text_after" : "      34\n  ICA (mid)     ",
+      "ambiguous" : true,
+      "match_method" : "VALUE_ONLY"
+    }
+  }, {
+    "vessel" : "ICA",
+    "laterality" : "Left",
+    "vessel_location" : "proximal",
+    "velocity_type" : "EDV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ICA (proximal)   108\n",
+    "value" : "34",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1829,
+      "end_offset" : 1831,
+      "text_before" : "  142           108      ",
+      "matched_text" : "34",
+      "text_after" : "\n  ICA (mid)        142  ",
+      "ambiguous" : false,
+      "match_method" : "VALUE_ONLY"
+    }
+  }, {
+    "vessel" : "ICA",
+    "laterality" : "Left",
+    "vessel_location" : "mid",
+    "velocity_type" : "PSV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ICA (mid)        86",
+    "value" : "86",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1874,
+      "end_offset" : 1876,
+      "text_before" : "  142      52            ",
+      "matched_text" : "86",
+      "text_after" : "      30\n  ICA (distal)  ",
+      "ambiguous" : false,
+      "match_method" : "VALUE_ONLY"
+    }
+  }, {
+    "vessel" : "ICA",
+    "laterality" : "Left",
+    "vessel_location" : "mid",
+    "velocity_type" : "EDV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ICA (mid)        86\n",
+    "value" : "30",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1882,
+      "end_offset" : 1884,
+      "text_before" : "   52            86      ",
+      "matched_text" : "30",
+      "text_after" : "\n  ICA (distal)      48  ",
+      "ambiguous" : true,
+      "match_method" : "VALUE_ONLY"
+    }
+  }, {
+    "vessel" : "ICA",
+    "laterality" : "Left",
+    "vessel_location" : "distal",
+    "velocity_type" : "PSV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ICA (distal)      72",
+    "value" : "72",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1927,
+      "end_offset" : 1929,
+      "text_before" : "   48      18            ",
+      "matched_text" : "72",
+      "text_after" : "      26\n  ECA           ",
+      "ambiguous" : false,
+      "match_method" : "VALUE_ONLY"
+    }
+  }, {
+    "vessel" : "ICA",
+    "laterality" : "Left",
+    "vessel_location" : "distal",
+    "velocity_type" : "EDV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ICA (distal)      72\n",
+    "value" : "26",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1935,
+      "end_offset" : 1937,
+      "text_before" : "   18            72      ",
+      "matched_text" : "26",
+      "text_after" : "\n  ECA              132  ",
+      "ambiguous" : false,
+      "match_method" : "VALUE_ONLY"
+    }
+  }, {
+    "vessel" : "ECA",
+    "laterality" : "Left",
+    "vessel_location" : "InsufficientInformation",
+    "velocity_type" : "PSV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ECA              98",
+    "value" : "98",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1980,
+      "end_offset" : 1982,
+      "text_before" : "  132      20            ",
+      "matched_text" : "98",
+      "text_after" : "      16\n  Vertebral     ",
+      "ambiguous" : false,
+      "match_method" : "VALUE_ONLY"
+    }
+  }, {
+    "vessel" : "ECA",
+    "laterality" : "Left",
+    "vessel_location" : "InsufficientInformation",
+    "velocity_type" : "EDV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ECA              98\n",
+    "value" : "16",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1988,
+      "end_offset" : 1990,
+      "text_before" : "   20            98      ",
+      "matched_text" : "16",
+      "text_after" : "\n  Vertebral         61  ",
+      "ambiguous" : false,
+      "match_method" : "VALUE_ONLY"
+    }
+  } ],
+  "stenosis" : [ {
+    "vessel" : "ICA",
+    "laterality" : "Right",
+    "source_text" : "Diameter reduction >=70% but less than near-occlusion.",
+    "percentage" : ">=70%",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1276,
+      "end_offset" : 1281,
+      "text_before" : "ence. Diameter reduction ",
+      "matched_text" : ">=70%",
+      "text_after" : "\n            but less tha",
+      "ambiguous" : false,
+      "match_method" : "WHITESPACE_NORMALIZED"
+    }
+  }, {
+    "vessel" : "ICA",
+    "laterality" : "Left",
+    "source_text" : "Mild calcified plaque, <50% stenosis.",
+    "percentage" : "<50%",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1526,
+      "end_offset" : 1530,
+      "text_before" : ". Mild calcified plaque, ",
+      "matched_text" : "<50%",
+      "text_after" : " stenosis.\n  ECA:  Patent",
+      "ambiguous" : false,
+      "match_method" : "EXACT"
+    }
+  } ],
+  "documentPathString" : "/Users/gobbelg/Documents/LLMs/TestCorpus/synthetic/report3_severe_right_ica_stenosis_with_TCD.txt"
+}
+
+{
+  "ICA_CCA_ratio" : [ {
+    "laterality" : "Right",
+    "source_text" : "ICA/CCA PSV ratio: 1.27",
+    "ratio_value" : "1.27",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1935,
+      "end_offset" : 1939,
+      "text_before" : "  ICA/CCA PSV ratio:     ",
+      "matched_text" : "1.27",
+      "text_after" : "                2.02\n  Ve",
+      "ambiguous" : false,
+      "match_method" : "WHITESPACE_NORMALIZED"
+    }
+  }, {
+    "laterality" : "Left",
+    "source_text" : "ICA/CCA ratio 2.0",
+    "ratio_value" : "2.0",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 2162,
+      "end_offset" : 2165,
+      "text_before" : "V 64 cm/s, ICA/CCA ratio ",
+      "matched_text" : "2.0",
+      "text_after" : ".\n   Interval progression",
+      "ambiguous" : false,
+      "match_method" : "EXACT"
+    }
+  } ],
+  "flow_velocities" : [ {
+    "vessel" : "CCA",
+    "laterality" : "Right",
+    "vessel_location" : "distal",
+    "velocity_type" : "PSV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "CCA (distal) 88",
+    "value" : "88",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1611,
+      "end_offset" : 1613,
+      "text_before" : " EDV\n  CCA (distal)      ",
+      "matched_text" : "88",
+      "text_after" : "      19            92   ",
+      "ambiguous" : false,
+      "match_method" : "WHITESPACE_NORMALIZED"
+    }
+  }, {
+    "vessel" : "CCA",
+    "laterality" : "Right",
+    "vessel_location" : "distal",
+    "velocity_type" : "EDV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "CCA (distal) 88",
+    "value" : "19",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1593,
+      "end_offset" : 1613,
+      "text_before" : "           PSV     EDV\n  ",
+      "matched_text" : "CCA (distal)      88",
+      "text_after" : "      19            92   ",
+      "ambiguous" : false,
+      "match_method" : "WHITESPACE_NORMALIZED+SNIPPET_ONLY"
+    }
+  }, {
+    "vessel" : "ICA",
+    "laterality" : "Right",
+    "vessel_location" : "proximal",
+    "velocity_type" : "PSV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ICA (proximal) 112",
+    "value" : "112",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1663,
+      "end_offset" : 1666,
+      "text_before" : "   21\n  ICA (proximal)   ",
+      "matched_text" : "112",
+      "text_after" : "      32           186   ",
+      "ambiguous" : false,
+      "match_method" : "WHITESPACE_NORMALIZED"
+    }
+  }, {
+    "vessel" : "ICA",
+    "laterality" : "Right",
+    "vessel_location" : "proximal",
+    "velocity_type" : "EDV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ICA (proximal) 112",
+    "value" : "32",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1646,
+      "end_offset" : 1666,
+      "text_before" : "            92      21\n  ",
+      "matched_text" : "ICA (proximal)   112",
+      "text_after" : "      32           186   ",
+      "ambiguous" : false,
+      "match_method" : "WHITESPACE_NORMALIZED+SNIPPET_ONLY"
+    }
+  }, {
+    "vessel" : "ICA",
+    "laterality" : "Right",
+    "vessel_location" : "mid",
+    "velocity_type" : "PSV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ICA (mid) 84",
+    "value" : "84",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1717,
+      "end_offset" : 1719,
+      "text_before" : "  64\n  ICA (mid)         ",
+      "matched_text" : "84",
+      "text_after" : "      28           102   ",
+      "ambiguous" : false,
+      "match_method" : "WHITESPACE_NORMALIZED"
+    }
+  }, {
+    "vessel" : "ICA",
+    "laterality" : "Right",
+    "vessel_location" : "mid",
+    "velocity_type" : "EDV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ICA (mid) 84",
+    "value" : "28",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1699,
+      "end_offset" : 1719,
+      "text_before" : "           186      64\n  ",
+      "matched_text" : "ICA (mid)         84",
+      "text_after" : "      28           102   ",
+      "ambiguous" : false,
+      "match_method" : "WHITESPACE_NORMALIZED+SNIPPET_ONLY"
+    }
+  }, {
+    "vessel" : "ICA",
+    "laterality" : "Right",
+    "vessel_location" : "distal",
+    "velocity_type" : "PSV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ICA (distal) 70",
+    "value" : "70",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1770,
+      "end_offset" : 1772,
+      "text_before" : "  36\n  ICA (distal)      ",
+      "matched_text" : "70",
+      "text_after" : "      25            78   ",
+      "ambiguous" : false,
+      "match_method" : "WHITESPACE_NORMALIZED"
+    }
+  }, {
+    "vessel" : "ICA",
+    "laterality" : "Right",
+    "vessel_location" : "distal",
+    "velocity_type" : "EDV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ICA (distal) 70",
+    "value" : "25",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1752,
+      "end_offset" : 1772,
+      "text_before" : "           102      36\n  ",
+      "matched_text" : "ICA (distal)      70",
+      "text_after" : "      25            78   ",
+      "ambiguous" : false,
+      "match_method" : "WHITESPACE_NORMALIZED+SNIPPET_ONLY"
+    }
+  }, {
+    "vessel" : "ECA",
+    "laterality" : "Right",
+    "vessel_location" : "InsufficientInformation",
+    "velocity_type" : "PSV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ECA 96",
+    "value" : "96",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1823,
+      "end_offset" : 1825,
+      "text_before" : "  28\n  ECA               ",
+      "matched_text" : "96",
+      "text_after" : "      14           101   ",
+      "ambiguous" : false,
+      "match_method" : "WHITESPACE_NORMALIZED"
+    }
+  }, {
+    "vessel" : "ECA",
+    "laterality" : "Right",
+    "vessel_location" : "InsufficientInformation",
+    "velocity_type" : "EDV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ECA 96",
+    "value" : "14",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1805,
+      "end_offset" : 1825,
+      "text_before" : "            78      28\n  ",
+      "matched_text" : "ECA               96",
+      "text_after" : "      14           101   ",
+      "ambiguous" : false,
+      "match_method" : "WHITESPACE_NORMALIZED+SNIPPET_ONLY"
+    }
+  }, {
+    "vessel" : "CCA",
+    "laterality" : "Left",
+    "vessel_location" : "distal",
+    "velocity_type" : "PSV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "CCA (distal) 92",
+    "value" : "92",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1633,
+      "end_offset" : 1635,
+      "text_before" : "   88      19            ",
+      "matched_text" : "92",
+      "text_after" : "      21\n  ICA (proximal)",
+      "ambiguous" : false,
+      "match_method" : "VALUE_ONLY"
+    }
+  }, {
+    "vessel" : "CCA",
+    "laterality" : "Left",
+    "vessel_location" : "distal",
+    "velocity_type" : "EDV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "CCA (distal) 92",
+    "value" : "21",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1641,
+      "end_offset" : 1643,
+      "text_before" : "   19            92      ",
+      "matched_text" : "21",
+      "text_after" : "\n  ICA (proximal)   112  ",
+      "ambiguous" : false,
+      "match_method" : "VALUE_ONLY"
+    }
+  }, {
+    "vessel" : "ICA",
+    "laterality" : "Left",
+    "vessel_location" : "proximal",
+    "velocity_type" : "PSV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ICA (proximal) 186",
+    "value" : "186",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1685,
+      "end_offset" : 1688,
+      "text_before" : "   112      32           ",
+      "matched_text" : "186",
+      "text_after" : "      64\n  ICA (mid)     ",
+      "ambiguous" : true,
+      "match_method" : "VALUE_ONLY"
+    }
+  }, {
+    "vessel" : "ICA",
+    "laterality" : "Left",
+    "vessel_location" : "proximal",
+    "velocity_type" : "EDV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ICA (proximal) 186",
+    "value" : "64",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1694,
+      "end_offset" : 1696,
+      "text_before" : "   32           186      ",
+      "matched_text" : "64",
+      "text_after" : "\n  ICA (mid)         84  ",
+      "ambiguous" : true,
+      "match_method" : "VALUE_ONLY"
+    }
+  }, {
+    "vessel" : "ICA",
+    "laterality" : "Left",
+    "vessel_location" : "mid",
+    "velocity_type" : "PSV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ICA (mid) 102",
+    "value" : "102",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1738,
+      "end_offset" : 1741,
+      "text_before" : "    84      28           ",
+      "matched_text" : "102",
+      "text_after" : "      36\n  ICA (distal)  ",
+      "ambiguous" : false,
+      "match_method" : "VALUE_ONLY"
+    }
+  }, {
+    "vessel" : "ICA",
+    "laterality" : "Left",
+    "vessel_location" : "mid",
+    "velocity_type" : "EDV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ICA (mid) 102",
+    "value" : "36",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1747,
+      "end_offset" : 1749,
+      "text_before" : "   28           102      ",
+      "matched_text" : "36",
+      "text_after" : "\n  ICA (distal)      70  ",
+      "ambiguous" : false,
+      "match_method" : "VALUE_ONLY"
+    }
+  }, {
+    "vessel" : "ICA",
+    "laterality" : "Left",
+    "vessel_location" : "distal",
+    "velocity_type" : "PSV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ICA (distal) 78",
+    "value" : "78",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1792,
+      "end_offset" : 1794,
+      "text_before" : "   70      25            ",
+      "matched_text" : "78",
+      "text_after" : "      28\n  ECA           ",
+      "ambiguous" : false,
+      "match_method" : "VALUE_ONLY"
+    }
+  }, {
+    "vessel" : "ICA",
+    "laterality" : "Left",
+    "vessel_location" : "distal",
+    "velocity_type" : "EDV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ICA (distal) 78",
+    "value" : "28",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1800,
+      "end_offset" : 1802,
+      "text_before" : "   25            78      ",
+      "matched_text" : "28",
+      "text_after" : "\n  ECA               96  ",
+      "ambiguous" : true,
+      "match_method" : "VALUE_ONLY"
+    }
+  }, {
+    "vessel" : "ECA",
+    "laterality" : "Left",
+    "vessel_location" : "InsufficientInformation",
+    "velocity_type" : "PSV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ECA 101",
+    "value" : "101",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1844,
+      "end_offset" : 1847,
+      "text_before" : "    96      14           ",
+      "matched_text" : "101",
+      "text_after" : "      15\n  Vertebral     ",
+      "ambiguous" : false,
+      "match_method" : "VALUE_ONLY"
+    }
+  }, {
+    "vessel" : "ECA",
+    "laterality" : "Left",
+    "vessel_location" : "InsufficientInformation",
+    "velocity_type" : "EDV",
+    "flow_direction" : "Unspecified",
+    "source_text" : "ECA 101",
+    "value" : "15",
+    "units" : "cm/s",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 1853,
+      "end_offset" : 1855,
+      "text_before" : "   14           101      ",
+      "matched_text" : "15",
+      "text_after" : "\n  Vertebral         58  ",
+      "ambiguous" : true,
+      "match_method" : "VALUE_ONLY"
+    }
+  } ],
+  "stenosis" : [ {
+    "vessel" : "ICA",
+    "laterality" : "Right",
+    "source_text" : "RIGHT ICA: <50% stenosis (peak systolic velocity 112 cm/s).",
+    "percentage" : "<50%",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 2042,
+      "end_offset" : 2046,
+      "text_before" : "MPRESSION:\n1. RIGHT ICA: ",
+      "matched_text" : "<50%",
+      "text_after" : " stenosis (peak systolic ",
+      "ambiguous" : false,
+      "match_method" : "EXACT"
+    }
+  }, {
+    "vessel" : "ICA",
+    "laterality" : "Left",
+    "source_text" : "LEFT ICA: 50-69% stenosis.",
+    "percentage" : "50-69%",
+    "value_location" : {
+      "found" : true,
+      "start_offset" : 2104,
+      "end_offset" : 2110,
+      "text_before" : " 112 cm/s).\n2. LEFT ICA: ",
+      "matched_text" : "50-69%",
+      "text_after" : " stenosis. PSV 186 cm/s, ",
+      "ambiguous" : false,
+      "match_method" : "EXACT"
+    }
+  } ],
+  "documentPathString" : "/Users/gobbelg/Documents/LLMs/TestCorpus/synthetic/report2_moderate_left_ica_stenosis.txt"
+}
+

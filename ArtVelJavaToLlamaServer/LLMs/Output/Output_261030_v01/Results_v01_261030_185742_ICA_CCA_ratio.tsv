@@ -1,0 +1,7 @@
+DocumentName	laterality	ratio_value	start_offset	end_offset	matched_text
+report1_normal_carotid_duplex.txt	Right	0.90	1703	1707	0.90
+report1_normal_carotid_duplex.txt	Left	0.90	1703	1707	0.90
+report3_severe_right_ica_stenosis_with_TCD.txt	Right	6.06	2070	2074	6.06
+report3_severe_right_ica_stenosis_with_TCD.txt	Left	1.20	2090	2094	1.20
+report2_moderate_left_ica_stenosis.txt	Right	1.27	1935	1939	1.27
+report2_moderate_left_ica_stenosis.txt	Left	2.0	2162	2165	2.0

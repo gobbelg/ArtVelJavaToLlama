@@ -1,0 +1,61 @@
+DocumentName	vessel	laterality	vessel_location	flow_direction	velocity_type	value	units	start_offset	end_offset	matched_text
+report1_normal_carotid_duplex.txt	CCA	Right	distal	Unspecified	PSV	82	cm/s	1379	1381	82
+report1_normal_carotid_duplex.txt	CCA	Right	distal	Unspecified	EDV	21	cm/s	1361	1381	CCA (distal)      82
+report1_normal_carotid_duplex.txt	ICA	Right	proximal	Unspecified	PSV	74	cm/s	1432	1434	74
+report1_normal_carotid_duplex.txt	ICA	Right	proximal	Unspecified	EDV	27	cm/s	1414	1434	ICA (proximal)    74
+report1_normal_carotid_duplex.txt	ICA	Right	mid	Unspecified	PSV	68	cm/s	1485	1487	68
+report1_normal_carotid_duplex.txt	ICA	Right	mid	Unspecified	EDV	25	cm/s	1467	1487	ICA (mid)         68
+report1_normal_carotid_duplex.txt	ICA	Right	distal	Unspecified	PSV	62	cm/s	1538	1540	62
+report1_normal_carotid_duplex.txt	ICA	Right	distal	Unspecified	EDV	23	cm/s	1520	1540	ICA (distal)      62
+report1_normal_carotid_duplex.txt	ECA	Right	InsufficientInformation	Unspecified	PSV	88	cm/s	1591	1593	88
+report1_normal_carotid_duplex.txt	ECA	Right	InsufficientInformation	Unspecified	EDV	12	cm/s	1573	1593	ECA               88
+report1_normal_carotid_duplex.txt	CCA	Left	distal	Unspecified	PSV	79	cm/s	1401	1403	79
+report1_normal_carotid_duplex.txt	CCA	Left	distal	Unspecified	EDV	20	cm/s	1409	1411	20
+report1_normal_carotid_duplex.txt	ICA	Left	proximal	Unspecified	PSV	71	cm/s	1454	1456	71
+report1_normal_carotid_duplex.txt	ICA	Left	proximal	Unspecified	EDV	26	cm/s	1462	1464	26
+report1_normal_carotid_duplex.txt	ICA	Left	mid	Unspecified	PSV	66	cm/s	1507	1509	66
+report1_normal_carotid_duplex.txt	ICA	Left	mid	Unspecified	EDV	24	cm/s	1515	1517	24
+report1_normal_carotid_duplex.txt	ICA	Left	distal	Unspecified	PSV	60	cm/s	1560	1562	60
+report1_normal_carotid_duplex.txt	ICA	Left	distal	Unspecified	EDV	22	cm/s	1568	1570	22
+report1_normal_carotid_duplex.txt	ECA	Left	InsufficientInformation	Unspecified	PSV	91	cm/s	1613	1615	91
+report1_normal_carotid_duplex.txt	ECA	Left	InsufficientInformation	Unspecified	EDV	13	cm/s	1621	1623	13
+report3_severe_right_ica_stenosis_with_TCD.txt	CCA	Right	distal	Unspecified	PSV	64	cm/s	1746	1748	64
+report3_severe_right_ica_stenosis_with_TCD.txt	CCA	Right	distal	Unspecified	EDV	12	cm/s	1728	1748	CCA (distal)      64
+report3_severe_right_ica_stenosis_with_TCD.txt	ICA	Right	proximal	Unspecified	PSV	388	cm/s	1798	1801	388
+report3_severe_right_ica_stenosis_with_TCD.txt	ICA	Right	proximal	Unspecified	EDV	142	cm/s	1781	1801	ICA (proximal)   388
+report3_severe_right_ica_stenosis_with_TCD.txt	ICA	Right	mid	Unspecified	PSV	142	cm/s	1851	1854	142
+report3_severe_right_ica_stenosis_with_TCD.txt	ICA	Right	mid	Unspecified	EDV	52	cm/s	1834	1854	ICA (mid)        142
+report3_severe_right_ica_stenosis_with_TCD.txt	ICA	Right	distal	Unspecified	PSV	48	cm/s	1905	1907	48
+report3_severe_right_ica_stenosis_with_TCD.txt	ICA	Right	distal	Unspecified	EDV	18	cm/s	1887	1907	ICA (distal)      48
+report3_severe_right_ica_stenosis_with_TCD.txt	ECA	Right	InsufficientInformation	Unspecified	PSV	132	cm/s	1957	1960	132
+report3_severe_right_ica_stenosis_with_TCD.txt	ECA	Right	InsufficientInformation	Unspecified	EDV	20	cm/s	1940	1960	ECA              132
+report3_severe_right_ica_stenosis_with_TCD.txt	CCA	Left	distal	Unspecified	PSV	90	cm/s	1768	1770	90
+report3_severe_right_ica_stenosis_with_TCD.txt	CCA	Left	distal	Unspecified	EDV	22	cm/s	1776	1778	22
+report3_severe_right_ica_stenosis_with_TCD.txt	ICA	Left	proximal	Unspecified	PSV	108	cm/s	1820	1823	108
+report3_severe_right_ica_stenosis_with_TCD.txt	ICA	Left	proximal	Unspecified	EDV	34	cm/s	1829	1831	34
+report3_severe_right_ica_stenosis_with_TCD.txt	ICA	Left	mid	Unspecified	PSV	86	cm/s	1874	1876	86
+report3_severe_right_ica_stenosis_with_TCD.txt	ICA	Left	mid	Unspecified	EDV	30	cm/s	1882	1884	30
+report3_severe_right_ica_stenosis_with_TCD.txt	ICA	Left	distal	Unspecified	PSV	72	cm/s	1927	1929	72
+report3_severe_right_ica_stenosis_with_TCD.txt	ICA	Left	distal	Unspecified	EDV	26	cm/s	1935	1937	26
+report3_severe_right_ica_stenosis_with_TCD.txt	ECA	Left	InsufficientInformation	Unspecified	PSV	98	cm/s	1980	1982	98
+report3_severe_right_ica_stenosis_with_TCD.txt	ECA	Left	InsufficientInformation	Unspecified	EDV	16	cm/s	1988	1990	16
+report2_moderate_left_ica_stenosis.txt	CCA	Right	distal	Unspecified	PSV	88	cm/s	1611	1613	88
+report2_moderate_left_ica_stenosis.txt	CCA	Right	distal	Unspecified	EDV	19	cm/s	1593	1613	CCA (distal)      88
+report2_moderate_left_ica_stenosis.txt	ICA	Right	proximal	Unspecified	PSV	112	cm/s	1663	1666	112
+report2_moderate_left_ica_stenosis.txt	ICA	Right	proximal	Unspecified	EDV	32	cm/s	1646	1666	ICA (proximal)   112
+report2_moderate_left_ica_stenosis.txt	ICA	Right	mid	Unspecified	PSV	84	cm/s	1717	1719	84
+report2_moderate_left_ica_stenosis.txt	ICA	Right	mid	Unspecified	EDV	28	cm/s	1699	1719	ICA (mid)         84
+report2_moderate_left_ica_stenosis.txt	ICA	Right	distal	Unspecified	PSV	70	cm/s	1770	1772	70
+report2_moderate_left_ica_stenosis.txt	ICA	Right	distal	Unspecified	EDV	25	cm/s	1752	1772	ICA (distal)      70
+report2_moderate_left_ica_stenosis.txt	ECA	Right	InsufficientInformation	Unspecified	PSV	96	cm/s	1823	1825	96
+report2_moderate_left_ica_stenosis.txt	ECA	Right	InsufficientInformation	Unspecified	EDV	14	cm/s	1805	1825	ECA               96
+report2_moderate_left_ica_stenosis.txt	CCA	Left	distal	Unspecified	PSV	92	cm/s	1633	1635	92
+report2_moderate_left_ica_stenosis.txt	CCA	Left	distal	Unspecified	EDV	21	cm/s	1641	1643	21
+report2_moderate_left_ica_stenosis.txt	ICA	Left	proximal	Unspecified	PSV	186	cm/s	1685	1688	186
+report2_moderate_left_ica_stenosis.txt	ICA	Left	proximal	Unspecified	EDV	64	cm/s	1694	1696	64
+report2_moderate_left_ica_stenosis.txt	ICA	Left	mid	Unspecified	PSV	102	cm/s	1738	1741	102
+report2_moderate_left_ica_stenosis.txt	ICA	Left	mid	Unspecified	EDV	36	cm/s	1747	1749	36
+report2_moderate_left_ica_stenosis.txt	ICA	Left	distal	Unspecified	PSV	78	cm/s	1792	1794	78
+report2_moderate_left_ica_stenosis.txt	ICA	Left	distal	Unspecified	EDV	28	cm/s	1800	1802	28
+report2_moderate_left_ica_stenosis.txt	ECA	Left	InsufficientInformation	Unspecified	PSV	101	cm/s	1844	1847	101
+report2_moderate_left_ica_stenosis.txt	ECA	Left	InsufficientInformation	Unspecified	EDV	15	cm/s	1853	1855	15

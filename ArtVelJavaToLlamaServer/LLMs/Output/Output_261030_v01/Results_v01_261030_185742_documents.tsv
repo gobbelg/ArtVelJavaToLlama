@@ -1,0 +1,4 @@
+DocumentName	DocumentPath	status	pass	ICA_CCA_ratios	flow_velocities	stenoses	values_total	located	ambiguous	excerpt_only	value_only	not_found	reused_location	max_identical_entries	notes	error
+report1_normal_carotid_duplex.txt	/Users/gobbelg/Documents/LLMs/TestCorpus/synthetic/report1_normal_carotid_duplex.txt	SUCCESS	1	2	20	1	23	23	0	5	10	0	1	1	REASONING_CONTENT(3280 chars)	
+report3_severe_right_ica_stenosis_with_TCD.txt	/Users/gobbelg/Documents/LLMs/TestCorpus/synthetic/report3_severe_right_ica_stenosis_with_TCD.txt	SUCCESS	1	2	20	2	24	24	2	5	11	0	0	1	REASONING_CONTENT(3712 chars)	
+report2_moderate_left_ica_stenosis.txt	/Users/gobbelg/Documents/LLMs/TestCorpus/synthetic/report2_moderate_left_ica_stenosis.txt	SUCCESS	1	2	20	2	24	24	4	5	10	0	0	1	REASONING_CONTENT(4016 chars)	
