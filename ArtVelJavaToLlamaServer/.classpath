@@ -6,25 +6,13 @@
 		</attributes>
 	</classpathentry>
 	<classpathentry kind="src" path="src"/>
-	<classpathentry kind="lib" path="jars/jackson-annotations-2.21.jar">
-		<attributes>
-			<attribute name="module" value="true"/>
-		</attributes>
-	</classpathentry>
-	<classpathentry kind="lib" path="jars/jackson-core-2.21.3.jar">
-		<attributes>
-			<attribute name="module" value="true"/>
-		</attributes>
-	</classpathentry>
-	<classpathentry kind="lib" path="jars/jackson-databind-2.21.3.jar">
-		<attributes>
-			<attribute name="module" value="true"/>
-		</attributes>
-	</classpathentry>
 	<classpathentry kind="lib" path="jars/mssql-jdbc-13.4.0.jre11.jar">
 		<attributes>
 			<attribute name="module" value="true"/>
 		</attributes>
 	</classpathentry>
+	<classpathentry kind="lib" path="jars/jackson-databind-2.22.4.jar"/>
+	<classpathentry kind="lib" path="jars/jackson-core-2.22.4.jar"/>
+	<classpathentry kind="lib" path="jars/jackson-annotations-2.22.jar"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>
