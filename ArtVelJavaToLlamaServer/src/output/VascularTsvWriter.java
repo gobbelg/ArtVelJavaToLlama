@@ -1,4 +1,6 @@
-package core;
+package output;
+
+import telemetry.DocumentTelemetry;
 
 import java.io.BufferedWriter;
 import java.io.FileOutputStream;
@@ -13,7 +15,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import core.VascularModels.*;
+import model.VascularModels.*;
 
 /**
  * Writes the extraction results to four tab-delimited files next to the JSON

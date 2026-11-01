@@ -1,4 +1,4 @@
-package core;
+package locate;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -9,7 +9,7 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import core.VascularModels.ValueLocation;
+import model.VascularModels.ValueLocation;
 
 /**
  * Finds the character offsets of an extracted value in the source document.

@@ -1,5 +1,12 @@
 package core;
 
+import config.AppSettings;
+import extract.ContextBudget;
+import extract.LlamaVascularExtractor;
+import extract.VascularPrompt;
+import server.LlamaServerConfig;
+import server.LlamaServerManager;
+
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -7,7 +14,7 @@ import java.util.List;
 import java.util.Scanner;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import core.VascularModels.VascularResult;
+import model.VascularModels.VascularResult;
 
 /**
  * Standalone throughput harness.
@@ -112,7 +119,7 @@ public class VascularThroughputHarness {
                 server.start();
 
                 LlamaVascularExtractor extractor = new LlamaVascularExtractor(
-                        server.baseUrl(), settings.modelName(), settings.effectivePrompt(MainVascular.SYSTEM_PROMPT),
+                        server.baseUrl(), settings.modelName(), settings.effectivePrompt(VascularPrompt.SYSTEM_PROMPT),
                         server.slotSize(), settings.requestTimeout(), settings.connectTimeout(),
                         settings.extractionOptions());
 

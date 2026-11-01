@@ -1,4 +1,6 @@
-package core;
+package config;
+
+import server.LlamaServerConfig;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;

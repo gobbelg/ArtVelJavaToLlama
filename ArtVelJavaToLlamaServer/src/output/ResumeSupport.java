@@ -1,4 +1,4 @@
-package core;
+package output;
 
 import java.io.BufferedInputStream;
 import java.io.IOException;

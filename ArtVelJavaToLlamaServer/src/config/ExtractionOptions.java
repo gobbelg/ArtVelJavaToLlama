@@ -1,4 +1,4 @@
-package core;
+package config;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -59,8 +59,7 @@ public final class ExtractionOptions {
     /** The values that were hard-coded before these became settings. */
     public static ExtractionOptions defaults() {
         return new ExtractionOptions(6000, 8192, 2048, 0.0, 1, 1.0, 1.0, -1, true, false,
-                ContextBudget.CHARS_PER_TOKEN, ContextBudget.PROMPT_OVERHEAD_TOKENS,
-                ContextBudget.SAFETY_MARGIN_TOKENS);
+                3.0, 128, 256);  // same as ContextBudget's defaults (kept literal so config does not depend on extract)
     }
 
     /** For the run manifest. */

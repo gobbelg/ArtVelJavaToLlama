@@ -1,4 +1,4 @@
-package core;
+package extract;
 
 /**
  * Decides, BEFORE any model call, whether a document can be processed reliably in

@@ -1,4 +1,4 @@
-package core;
+package server;
 
 import java.nio.file.Path;
 import java.util.ArrayList;

@@ -1,4 +1,8 @@
-package core;
+package extract;
+
+import config.ExtractionOptions;
+import locate.ValueLocator;
+import telemetry.DocumentTelemetry;
 
 import java.io.File;
 import java.io.IOException;
@@ -27,16 +31,16 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.module.SimpleModule;
 
-import core.NullToNoInformationDeserializer;
-import core.VascularModels.FlowVelocity;
-import core.VascularModels.IcaCcaRatio;
-import core.VascularModels.ModelFlowVelocity;
-import core.VascularModels.ModelIcaCcaRatio;
-import core.VascularModels.ModelStenosis;
-import core.VascularModels.ModelVascularResult;
-import core.VascularModels.Stenosis;
-import core.VascularModels.ValueLocation;
-import core.VascularModels.VascularResult;
+import model.NullToNoInformationDeserializer;
+import model.VascularModels.FlowVelocity;
+import model.VascularModels.IcaCcaRatio;
+import model.VascularModels.ModelFlowVelocity;
+import model.VascularModels.ModelIcaCcaRatio;
+import model.VascularModels.ModelStenosis;
+import model.VascularModels.ModelVascularResult;
+import model.VascularModels.Stenosis;
+import model.VascularModels.ValueLocation;
+import model.VascularModels.VascularResult;
 
 public class LlamaVascularExtractor {
 

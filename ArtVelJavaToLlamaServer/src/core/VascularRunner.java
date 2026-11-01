@@ -1,5 +1,8 @@
 package core;
 
+import config.AppSettings;
+import database.VascularDbImporter;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -13,7 +16,7 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
 
-// (VascularDbImporterRevised is in this package, so no import is needed)
+// (VascularDbImporter is in the "database" package; imported above)
 
 public class VascularRunner {
 

@@ -1,4 +1,8 @@
-package core;
+package telemetry;
+
+import config.AppSettings;
+import config.ExtractionOptions;
+import server.LlamaServerConfig;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
