@@ -53,9 +53,23 @@ public final class ContextBudget {
     private final int slotSize;
     private final int systemPromptTokens;
     private final int outputReserveTokens;
+    private final double charsPerToken;
+    private final int promptOverheadTokens;
+    private final int safetyMarginTokens;
 
+    /** Uses the default estimate constants above. */
     public ContextBudget(int slotSize, String systemPrompt, int outputReserveTokens) {
+        this(slotSize, systemPrompt, outputReserveTokens, CHARS_PER_TOKEN,
+                PROMPT_OVERHEAD_TOKENS, SAFETY_MARGIN_TOKENS);
+    }
+
+    /** The estimate constants can be tuned per model (see ExtractionOptions). */
+    public ContextBudget(int slotSize, String systemPrompt, int outputReserveTokens,
+            double charsPerToken, int promptOverheadTokens, int safetyMarginTokens) {
         this.slotSize = slotSize;
+        this.charsPerToken = charsPerToken;
+        this.promptOverheadTokens = promptOverheadTokens;
+        this.safetyMarginTokens = safetyMarginTokens;
         this.systemPromptTokens = estimateTokens(systemPrompt);
         this.outputReserveTokens = outputReserveTokens;
 
@@ -67,8 +81,12 @@ public final class ContextBudget {
         }
     }
 
-    public static int estimateTokens(String text) {
-        return (int) Math.ceil(text.length() / CHARS_PER_TOKEN);
+    public int estimateTokens(String text) {
+        return (int) Math.ceil(text.length() / charsPerToken);
+    }
+
+    public double charsPerToken() {
+        return charsPerToken;
     }
 
     public int slotSize() {
@@ -76,12 +94,12 @@ public final class ContextBudget {
     }
 
     public int maxDocumentTokens() {
-        return slotSize - systemPromptTokens - PROMPT_OVERHEAD_TOKENS
-                - outputReserveTokens - SAFETY_MARGIN_TOKENS;
+        return slotSize - systemPromptTokens - promptOverheadTokens
+                - outputReserveTokens - safetyMarginTokens;
     }
 
     public int maxDocumentChars() {
-        return (int) Math.floor(maxDocumentTokens() * CHARS_PER_TOKEN);
+        return (int) Math.floor(maxDocumentTokens() * charsPerToken);
     }
 
     /** Throws DocumentTooLongException if the document is above the limit. */
@@ -96,14 +114,14 @@ public final class ContextBudget {
 
     /** Estimated tokens still free for output after the prompt (never negative). */
     public int availableOutputTokens(String document) {
-        int prompt = systemPromptTokens + PROMPT_OVERHEAD_TOKENS + estimateTokens(document);
-        return Math.max(0, slotSize - prompt - SAFETY_MARGIN_TOKENS);
+        int prompt = systemPromptTokens + promptOverheadTokens + estimateTokens(document);
+        return Math.max(0, slotSize - prompt - safetyMarginTokens);
     }
 
     public String describe() {
         return "Context budget: slot size " + slotSize + " tokens; system prompt ~" + systemPromptTokens
                 + "; output reserve " + outputReserveTokens + "; largest admitted report ~"
                 + maxDocumentTokens() + " tokens (" + maxDocumentChars() + " characters at "
-                + CHARS_PER_TOKEN + " chars/token). Longer reports are set aside for a larger-slot pass.";
+                + charsPerToken + " chars/token). Longer reports are set aside for a larger-slot pass.";
     }
 }

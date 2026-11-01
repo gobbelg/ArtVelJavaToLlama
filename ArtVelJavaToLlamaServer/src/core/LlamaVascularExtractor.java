@@ -74,15 +74,13 @@ public class LlamaVascularExtractor {
     // outputs. (The previous 4,300-4,800 token observations pre-date the units field
     // and any change to source_text length, so re-measure.)
     // -------------------------------------------------------------------------
-    public static final int MAX_TOKENS = 6000;
-
-    // Larger budget for the single retry after a truncated first attempt. The retry
-    // is also limited to the output room actually left in the slot, and is skipped
-    // when that is not larger than MAX_TOKENS (a repeat would fail the same way).
-    public static final int RETRY_MAX_TOKENS = 8192;
-
-    // Repair prompt output budget — repaired JSON is never large.
-    private static final int REPAIR_MAX_TOKENS = 2048;
+    //
+    // The three limits are now settings (ExtractionOptions; keys generation.max-tokens,
+    // generation.retry-max-tokens and generation.repair-max-tokens). Defaults: 6000,
+    // 8192 (the single larger-budget retry after a truncated first attempt, also
+    // limited to the output room left in the slot and skipped when not larger than
+    // max-tokens, since a repeat would fail the same way) and 2048 (the repair
+    // prompt; repaired JSON is never large).
 
     // -------------------------------------------------------------------------
     // HTTP TIMEOUTS
@@ -116,12 +114,11 @@ public class LlamaVascularExtractor {
     // finish_reason=length with no answer), reports it in the "Observed token usage"
     // summary and the per-document notes, and does not waste a retry on it.
     //
-    // If the summary reports reasoning output, set USE_GRAMMAR_INSTEAD_OF_SCHEMA to
-    // true: the same output structure is then sent as a GBNF "grammar" (the
+    // If the summary reports reasoning output, set generation.use-grammar = true in
+    // the settings: the same output structure is then sent as a GBNF "grammar" (the
     // documented workaround), which does not allow the thought channel.
+    // generation.disable-thinking (default true) controls enable_thinking=false.
     // -------------------------------------------------------------------------
-    private static final boolean DISABLE_THINKING = true;
-    private static final boolean USE_GRAMMAR_INSTEAD_OF_SCHEMA = false;
 
     // This many IDENTICAL entries (same vessel, side, location, type, direction,
     // value, units and excerpt) in one section is treated as a probable repetition
@@ -167,6 +164,12 @@ public class LlamaVascularExtractor {
     private final String systemPrompt;
     private final ContextBudget budget;
     private final UsageStats usage = new UsageStats();
+    private final ExtractionOptions options;
+
+    // Per-document timing/token data, collected like the notes: a ThreadLocal during
+    // the call, then parked until the caller collects it with takeTelemetry().
+    private static final ThreadLocal<DocumentTelemetry> CURRENT_TELEMETRY = new ThreadLocal<>();
+    private final ConcurrentHashMap<String, DocumentTelemetry> telemetryByDocument = new ConcurrentHashMap<>();
 
     /**
      * @param slotSizeTokens context available to ONE request on the server
@@ -185,6 +188,18 @@ public class LlamaVascularExtractor {
      */
     public LlamaVascularExtractor(String serverUrl, String modelName, String systemPrompt,
             int slotSizeTokens, Duration requestTimeout, Duration connectTimeout) {
+        this(serverUrl, modelName, systemPrompt, slotSizeTokens, requestTimeout, connectTimeout,
+                ExtractionOptions.defaults());
+    }
+
+    /**
+     * @param options generation limits, sampling, thinking/grammar switches and the
+     *                context-budget estimate (see ExtractionOptions)
+     */
+    public LlamaVascularExtractor(String serverUrl, String modelName, String systemPrompt,
+            int slotSizeTokens, Duration requestTimeout, Duration connectTimeout,
+            ExtractionOptions options) {
+        this.options = options;
         this.requestTimeout = requestTimeout;
         this.connectTimeout = connectTimeout;
         this.httpClient = HttpClient.newBuilder()
@@ -194,7 +209,8 @@ public class LlamaVascularExtractor {
         this.serverUrl    = serverUrl;
         this.modelName    = modelName;
         this.systemPrompt = systemPrompt;
-        this.budget       = new ContextBudget(slotSizeTokens, systemPrompt, MAX_TOKENS);
+        this.budget       = new ContextBudget(slotSizeTokens, systemPrompt, options.maxTokens,
+                options.charsPerToken, options.promptOverheadTokens, options.safetyMarginTokens);
     }
 
     public ContextBudget getBudget() {
@@ -203,7 +219,7 @@ public class LlamaVascularExtractor {
 
     /** Summary of real token usage reported by the server (for calibrating MAX_TOKENS). */
     public String usageSummary() {
-        return usage.summary(MAX_TOKENS);
+        return usage.summary(options.maxTokens, options.charsPerToken);
     }
 
     // -------------------------------------------------------------------------
@@ -305,6 +321,14 @@ public class LlamaVascularExtractor {
         return notes == null ? "" : notes;
     }
 
+    /**
+     * Returns (and clears) the timing, token and raw-response data recorded for the
+     * given document, or null if there is none. Works for failed documents too.
+     */
+    public DocumentTelemetry takeTelemetry(String documentPathString) {
+        return telemetryByDocument.remove(documentPathString);
+    }
+
     private static void note(String text) {
         List<String> notes = CURRENT_NOTES.get();
         if (notes != null) {
@@ -315,10 +339,18 @@ public class LlamaVascularExtractor {
     public VascularResult analyzeDocument(Path documentPath) throws Exception {
         List<String> notes = new ArrayList<>();
         CURRENT_NOTES.set(notes);
+        DocumentTelemetry telemetry = new DocumentTelemetry();
+        telemetry.startEpochMs = System.currentTimeMillis();
+        long startNanos = System.nanoTime();
+        CURRENT_TELEMETRY.set(telemetry);
         try {
             return analyzeDocumentCore(documentPath);
         } finally {
             CURRENT_NOTES.remove();
+            CURRENT_TELEMETRY.remove();
+            telemetry.endEpochMs = System.currentTimeMillis();
+            telemetry.wallMs = (System.nanoTime() - startNanos) / 1_000_000L;
+            telemetryByDocument.put(documentPath.toString(), telemetry);
             if (!notes.isEmpty()) {
                 notesByDocument.put(documentPath.toString(), String.join("; ", notes));
             }
@@ -336,36 +368,36 @@ public class LlamaVascularExtractor {
         // Primary attempt.
         String rawContent;
         try {
-            rawContent = callModelForContent(buildUserMessage(document), MAX_TOKENS);
+            rawContent = callModelForContent(buildUserMessage(document), options.maxTokens, "primary");
         } catch (TruncationException te) {
             // A repetition loop or an unclosed thought channel is NOT cured by a
             // larger budget (it would just run longer), so fail fast instead.
             if (te.repetitionSuspected) {
-                throw new RuntimeException("Output truncated at max_tokens=" + MAX_TOKENS
+                throw new RuntimeException("Output truncated at max_tokens=" + options.maxTokens
                         + " and the partial output repeats the same entries (repetition loop); "
                         + "not retried with a larger budget.", te);
             }
             if (te.reasoningChars > 0 && te.contentChars == 0) {
-                throw new RuntimeException("Output truncated at max_tokens=" + MAX_TOKENS
+                throw new RuntimeException("Output truncated at max_tokens=" + options.maxTokens
                         + " while the model was still in its thought channel (" + te.reasoningChars
                         + " characters of reasoning, no answer). Not retried. See the thinking notes "
-                        + "in LlamaVascularExtractor (DISABLE_THINKING, USE_GRAMMAR_INSTEAD_OF_SCHEMA).", te);
+                        + "in LlamaVascularExtractor (generation.disable-thinking, generation.use-grammar).", te);
             }
 
             // Output hit the token ceiling. A plain retry at temperature 0 would
             // reproduce identical (still-truncated) output, so the ONLY useful
             // response is a larger budget. Jump straight to the larger-budget
             // retry and skip the repair path (repair cannot fix truncation).
-            int retryTokens = Math.min(RETRY_MAX_TOKENS, budget.availableOutputTokens(document));
-            if (retryTokens <= MAX_TOKENS) {
-                throw new RuntimeException("Output truncated at max_tokens=" + MAX_TOKENS
+            int retryTokens = Math.min(options.retryMaxTokens, budget.availableOutputTokens(document));
+            if (retryTokens <= options.maxTokens) {
+                throw new RuntimeException("Output truncated at max_tokens=" + options.maxTokens
                         + " and the slot has no larger output budget for this document (about "
                         + budget.availableOutputTokens(document) + " tokens available).", te);
             }
             note("RETRIED_LARGER_BUDGET");
             System.err.println("Primary truncated for " + documentPath.getFileName()
                     + "; retrying with max_tokens=" + retryTokens + ".");
-            String retryContent = callModelForContent(buildUserMessage(document), retryTokens);
+            String retryContent = callModelForContent(buildUserMessage(document), retryTokens, "retry");
             ModelVascularResult retryResult =
                     OBJECT_MAPPER.readValue(retryContent.trim(), ModelVascularResult.class);
             validate(retryResult);
@@ -536,27 +568,32 @@ public class LlamaVascularExtractor {
         // message with no system prompt (no cache benefit here — repairs are rare).
         String repaired = callModelForContent(List.of(
                 Map.of("role", "user", "content", buildJsonRepairPrompt(invalidJson))),
-                REPAIR_MAX_TOKENS);
+                options.repairMaxTokens, "repair");
         return OBJECT_MAPPER.readValue(repaired.trim(), ModelVascularResult.class);
     }
 
     // Convenience overload: builds the system + user message pair for a report.
-    private String callModelForContent(String userMessage, int maxTokens) throws Exception {
+    private String callModelForContent(String userMessage, int maxTokens, String stage) throws Exception {
         List<Map<String, String>> messages = List.of(
                 Map.of("role", "system", "content", systemPrompt),
                 Map.of("role", "user", "content", userMessage));
-        return callModelForContent(messages, maxTokens);
+        return callModelForContent(messages, maxTokens, stage);
     }
 
-    private String callModelForContent(List<Map<String, String>> messages, int maxTokens) throws Exception {
+    private String callModelForContent(List<Map<String, String>> messages, int maxTokens,
+            String stage) throws Exception {
         Map<String, Object> requestBody = new LinkedHashMap<>();
         requestBody.put("model", modelName);
 
-        // Deterministic greedy decoding — correct for schema-locked extraction.
-        requestBody.put("temperature", 0);
-        requestBody.put("top_k", 1);
-        requestBody.put("top_p", 1.0);
-        requestBody.put("repeat_penalty", 1.0);
+        // Sampling comes from the settings (ExtractionOptions). The defaults are
+        // deterministic greedy decoding, which is right for schema-locked extraction.
+        requestBody.put("temperature", options.temperature);
+        requestBody.put("top_k", options.topK);
+        requestBody.put("top_p", options.topP);
+        requestBody.put("repeat_penalty", options.repeatPenalty);
+        if (options.seed >= 0) {
+            requestBody.put("seed", options.seed);
+        }
         requestBody.put("max_tokens", maxTokens);
         requestBody.put("stream", false);
 
@@ -566,21 +603,28 @@ public class LlamaVascularExtractor {
 
         // ACCURACY: constrain output at generation time (json_schema or
         // json_object, selected by USE_JSON_SCHEMA).
-        // (or the equivalent GBNF grammar; see USE_GRAMMAR_INSTEAD_OF_SCHEMA).
-        if (USE_GRAMMAR_INSTEAD_OF_SCHEMA) {
+        // (or the equivalent GBNF grammar; see generation.use-grammar).
+        if (options.useGrammar) {
             requestBody.put("grammar", buildGrammar());
         } else {
             requestBody.put("response_format", buildResponseFormat());
         }
 
-        // Extraction needs no reasoning; see DISABLE_THINKING.
-        if (DISABLE_THINKING) {
+        // Extraction needs no reasoning; see generation.disable-thinking.
+        if (options.disableThinking) {
             requestBody.put("chat_template_kwargs", Map.of("enable_thinking", false));
         }
 
         requestBody.put("messages", messages);
 
-        String responseJson = postJson(serverUrl + "/v1/chat/completions", requestBody);
+        long requestStart = System.nanoTime();
+        String responseJson;
+        try {
+            responseJson = postJson(serverUrl + "/v1/chat/completions", requestBody);
+        } finally {
+            addRequestTime((System.nanoTime() - requestStart) / 1_000_000L);
+        }
+        long requestMs = (System.nanoTime() - requestStart) / 1_000_000L;
         JsonNode root = OBJECT_MAPPER.readTree(responseJson);
         recordUsage(root, messages);
         JsonNode contentNode = root.path("choices").path(0).path("message").path("content");
@@ -601,6 +645,7 @@ public class LlamaVascularExtractor {
         }
 
         String finishReason = root.path("choices").path(0).path("finish_reason").asText("");
+        recordTelemetry(root, stage, finishReason, requestMs, contentNode.asText(), reasoning);
         if ("length".equals(finishReason)) {
             String partial = contentNode.asText();
             boolean loop = looksLikeRepetitionLoop(partial);
@@ -626,8 +671,41 @@ public class LlamaVascularExtractor {
         return content;
     }
 
+    // Adds time spent in one HTTP call to the current document's telemetry.
+    private static void addRequestTime(long ms) {
+        DocumentTelemetry t = CURRENT_TELEMETRY.get();
+        if (t != null) {
+            t.requestMs += ms;
+            t.modelCalls++;
+        }
+    }
+
+    // Adds one call's token counts, llama-server timings and raw output to the
+    // current document's telemetry. The "timings" object is llama-server's own
+    // measurement; fields missing in other builds are simply left at zero.
+    private static void recordTelemetry(JsonNode root, String stage, String finishReason,
+            long requestMs, String content, String reasoning) {
+        DocumentTelemetry t = CURRENT_TELEMETRY.get();
+        if (t == null) {
+            return;
+        }
+        JsonNode u = root.path("usage");
+        int promptTokens = Math.max(0, u.path("prompt_tokens").asInt(0));
+        int completionTokens = Math.max(0, u.path("completion_tokens").asInt(0));
+        t.promptTokens += promptTokens;
+        t.completionTokens += completionTokens;
+        JsonNode tm = root.path("timings");
+        t.promptN += tm.path("prompt_n").asLong(0);
+        t.promptMs += tm.path("prompt_ms").asDouble(0);
+        t.predictedN += tm.path("predicted_n").asLong(0);
+        t.predictedMs += tm.path("predicted_ms").asDouble(0);
+        t.cachedTokens += tm.path("cache_n").asLong(0);
+        t.rawResponses.add(new DocumentTelemetry.RawResponse(stage, finishReason, promptTokens,
+                completionTokens, requestMs, content, reasoning));
+    }
+
     // Records the server-reported token counts (usage.prompt_tokens /
-    // usage.completion_tokens) so MAX_TOKENS and ContextBudget.CHARS_PER_TOKEN can
+    // usage.completion_tokens) so max_tokens and the chars-per-token estimate can
     // be checked against real data. Called before the truncation check so that
     // truncated calls are counted too.
     private void recordUsage(JsonNode root, List<Map<String, String>> messages) {
@@ -665,31 +743,31 @@ public class LlamaVascularExtractor {
             minCharsPerToken = Math.min(minCharsPerToken, promptChars / (double) promptTokens);
         }
 
-        synchronized String summary(int maxTokensCap) {
+        synchronized String summary(int maxTokensCap, double charsPerToken) {
             if (calls == 0) {
                 return "Observed token usage: no model calls recorded.";
             }
             StringBuilder sb = new StringBuilder();
             sb.append(String.format(
                     "Observed token usage over %d model calls: largest prompt %d tokens; "
-                    + "largest completion %d tokens (MAX_TOKENS = %d); lowest characters per token %.2f "
+                    + "largest completion %d tokens (max_tokens = %d); lowest characters per token %.2f "
                     + "(ContextBudget assumes %.1f; includes chat-template tokens, so slightly pessimistic).",
                     calls, maxPrompt, maxCompletion, maxTokensCap, minCharsPerToken,
-                    ContextBudget.CHARS_PER_TOKEN));
+                    charsPerToken));
             if (maxCompletion >= 0.9 * maxTokensCap) {
-                sb.append("\n  NOTE: completions reached 90% or more of MAX_TOKENS; consider raising it, "
+                sb.append("\n  NOTE: completions reached 90% or more of max_tokens; consider raising it, "
                         + "or check the long outputs for repetition loops.");
             }
             if (reasoningCalls > 0) {
                 sb.append(String.format("\n  WARNING: %d model call(s) returned reasoning_content (longest %d "
                         + "characters) even though thinking is disabled. This costs generation time and can "
                         + "run to max_tokens. Known llama.cpp issue with response_format json_schema on "
-                        + "Gemma 4; set USE_GRAMMAR_INSTEAD_OF_SCHEMA = true in LlamaVascularExtractor.",
+                        + "Gemma 4; set generation.use-grammar = true in the settings.",
                         reasoningCalls, maxReasoningChars));
             }
-            if (minCharsPerToken < ContextBudget.CHARS_PER_TOKEN) {
+            if (minCharsPerToken < charsPerToken) {
                 sb.append("\n  NOTE: some prompts were denser than the assumed characters per token; "
-                        + "consider lowering ContextBudget.CHARS_PER_TOKEN.");
+                        + "consider lowering budget.chars-per-token.");
             }
             return sb.toString();
         }

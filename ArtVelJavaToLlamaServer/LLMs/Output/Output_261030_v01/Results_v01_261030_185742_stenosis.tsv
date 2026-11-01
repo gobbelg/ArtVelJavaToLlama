@@ -1,6 +1,0 @@
-DocumentName	vessel	laterality	percentage	start_offset	end_offset	matched_text
-report1_normal_carotid_duplex.txt	ICA	InsufficientInformation	0%	1911	1913	0%
-report3_severe_right_ica_stenosis_with_TCD.txt	ICA	Right	>=70%	1276	1281	>=70%
-report3_severe_right_ica_stenosis_with_TCD.txt	ICA	Left	<50%	1526	1530	<50%
-report2_moderate_left_ica_stenosis.txt	ICA	Right	<50%	2042	2046	<50%
-report2_moderate_left_ica_stenosis.txt	ICA	Left	50-69%	2104	2110	50-69%

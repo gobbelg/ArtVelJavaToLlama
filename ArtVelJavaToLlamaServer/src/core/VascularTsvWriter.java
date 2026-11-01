@@ -78,7 +78,16 @@ public class VascularTsvWriter implements AutoCloseable {
             "located", "ambiguous", "excerpt_only", "value_only", "not_found", "reused_location",
             "max_identical_entries", "notes", "error");
 
+    /** Added to documents.tsv, after run_id, only when a run id is given (experiment mode). */
+    private static final List<String> TELEMETRY_COLUMNS = List.of(
+            "wall_ms", "request_ms", "model_calls", "prompt_tokens", "completion_tokens",
+            "prompt_tokens_per_s", "generation_tokens_per_s", "cached_prompt_tokens",
+            "start_epoch_ms", "end_epoch_ms");
+
     private static final int MAX_ERROR_CHARS = 500;
+
+    /** Null = legacy columns; otherwise run_id (and telemetry in documents.tsv) are added. */
+    private final String runId;
 
     private final PrintWriter ratioWriter;
     private final PrintWriter velocityWriter;
@@ -91,6 +100,17 @@ public class VascularTsvWriter implements AutoCloseable {
     private final Path documentFile;
 
     public VascularTsvWriter(Path jsonOutputFile) throws IOException {
+        this(jsonOutputFile, null);
+    }
+
+    /**
+     * @param runId when not null (experiment mode) every file gets a final run_id column
+     *              and documents.tsv also gets per-document timing and token columns.
+     *              With null the columns are exactly as before, so appending to files
+     *              from earlier runs still lines up.
+     */
+    public VascularTsvWriter(Path jsonOutputFile, String runId) throws IOException {
+        this.runId = runId;
         String name = jsonOutputFile.getFileName().toString();
         int dot = name.lastIndexOf('.');
         String base = dot > 0 ? name.substring(0, dot) : name;
@@ -101,14 +121,26 @@ public class VascularTsvWriter implements AutoCloseable {
         stenosisFile = dir.resolve(base + "_stenosis.tsv");
         documentFile = dir.resolve(base + "_documents.tsv");
 
-        ratioWriter    = open(ratioFile, RATIO_COLUMNS);
-        velocityWriter = open(velocityFile, VELOCITY_COLUMNS);
-        stenosisWriter = open(stenosisFile, STENOSIS_COLUMNS);
-        documentWriter = open(documentFile, DOCUMENT_COLUMNS);
+        ratioWriter    = open(ratioFile, withRunId(RATIO_COLUMNS, false));
+        velocityWriter = open(velocityFile, withRunId(VELOCITY_COLUMNS, false));
+        stenosisWriter = open(stenosisFile, withRunId(STENOSIS_COLUMNS, false));
+        documentWriter = open(documentFile, withRunId(DOCUMENT_COLUMNS, true));
     }
 
     public List<Path> getFiles() {
         return List.of(ratioFile, velocityFile, stenosisFile, documentFile);
+    }
+
+    private List<String> withRunId(List<String> columns, boolean telemetry) {
+        if (runId == null) {
+            return columns;
+        }
+        List<String> all = new java.util.ArrayList<>(columns);
+        all.add("run_id");
+        if (telemetry) {
+            all.addAll(TELEMETRY_COLUMNS);
+        }
+        return all;
     }
 
     private static PrintWriter open(Path file, List<String> columns) throws IOException {
@@ -137,28 +169,33 @@ public class VascularTsvWriter implements AutoCloseable {
      * @param notes diagnostic notes for the document (may be null or empty)
      */
     public void write(VascularResult result, int pass, String notes) {
+        write(result, pass, notes, null);
+    }
+
+    /** As above, with the document's timing and token telemetry (used only when a run id was given). */
+    public void write(VascularResult result, int pass, String notes, DocumentTelemetry telemetry) {
         String docName = Paths.get(result.documentPathString()).getFileName().toString();
 
         for (IcaCcaRatio r : result.ICA_CCA_ratio()) {
             ValueLocation loc = r.value_location();
-            ratioWriter.print(row(docName, r.laterality(), r.ratio_value(),
+            ratioWriter.print(rowWithRun(docName, r.laterality(), r.ratio_value(),
                     start(loc), end(loc), matched(loc)));
         }
 
         for (FlowVelocity v : result.flow_velocities()) {
             ValueLocation loc = v.value_location();
-            velocityWriter.print(row(docName, v.vessel(), v.laterality(), v.vessel_location(),
+            velocityWriter.print(rowWithRun(docName, v.vessel(), v.laterality(), v.vessel_location(),
                     v.flow_direction(), v.velocity_type(), v.value(), v.units(),
                     start(loc), end(loc), matched(loc)));
         }
 
         for (Stenosis s : result.stenosis()) {
             ValueLocation loc = s.value_location();
-            stenosisWriter.print(row(docName, s.vessel(), s.laterality(), s.percentage(),
+            stenosisWriter.print(rowWithRun(docName, s.vessel(), s.laterality(), s.percentage(),
                     start(loc), end(loc), matched(loc)));
         }
 
-        writeDocumentRow(result, docName, pass, notes);
+        writeDocumentRow(result, docName, pass, notes, telemetry);
 
         ratioWriter.flush();
         velocityWriter.flush();
@@ -174,17 +211,23 @@ public class VascularTsvWriter implements AutoCloseable {
      * @param error        a message (only the first 500 characters are kept)
      */
     public void writeStatus(String documentPath, String status, int pass, String notes, String error) {
+        writeStatus(documentPath, status, pass, notes, error, null);
+    }
+
+    public void writeStatus(String documentPath, String status, int pass, String notes, String error,
+            DocumentTelemetry telemetry) {
         String name = Paths.get(documentPath).getFileName().toString();
         String shortError = error == null ? "" : error;
         if (shortError.length() > MAX_ERROR_CHARS) {
             shortError = shortError.substring(0, MAX_ERROR_CHARS) + "...";
         }
-        documentWriter.print(row(name, documentPath, status, Integer.toString(pass),
+        documentWriter.print(documentRow(telemetry, name, documentPath, status, Integer.toString(pass),
                 "", "", "", "", "", "", "", "", "", "", "", notes, shortError));
         documentWriter.flush();
     }
 
-    private void writeDocumentRow(VascularResult result, String docName, int pass, String notes) {
+    private void writeDocumentRow(VascularResult result, String docName, int pass, String notes,
+            DocumentTelemetry telemetry) {
         List<ValueLocation> locations = new java.util.ArrayList<>();
         result.ICA_CCA_ratio().forEach(r -> locations.add(r.value_location()));
         result.flow_velocities().forEach(v -> locations.add(v.value_location()));
@@ -212,7 +255,7 @@ public class VascularTsvWriter implements AutoCloseable {
             }
         }
 
-        documentWriter.print(row(docName, result.documentPathString(),
+        documentWriter.print(documentRow(telemetry, docName, result.documentPathString(),
                 total == 0 ? "SUCCESS_NO_FINDINGS" : "SUCCESS", Integer.toString(pass),
                 Integer.toString(result.ICA_CCA_ratio().size()),
                 Integer.toString(result.flow_velocities().size()),
@@ -223,6 +266,46 @@ public class VascularTsvWriter implements AutoCloseable {
                 Long.toString(notFound), Long.toString(reused),
                 Integer.toString(maxIdenticalEntries(result)),
                 notes, ""));
+    }
+
+    /** A row for the ratio / velocity / stenosis files: the fields plus run_id when in use. */
+    private String rowWithRun(String... fields) {
+        if (runId == null) {
+            return row(fields);
+        }
+        String[] all = java.util.Arrays.copyOf(fields, fields.length + 1);
+        all[fields.length] = runId;
+        return row(all);
+    }
+
+    /** A documents-file row: the fields plus, when in use, run_id and the telemetry columns. */
+    private String documentRow(DocumentTelemetry t, String... fields) {
+        if (runId == null) {
+            return row(fields);
+        }
+        List<String> all = new java.util.ArrayList<>(java.util.Arrays.asList(fields));
+        all.add(runId);
+        if (t == null) {
+            for (int i = 0; i < TELEMETRY_COLUMNS.size(); i++) {
+                all.add("");
+            }
+        } else {
+            all.add(Long.toString(t.wallMs));
+            all.add(Long.toString(t.requestMs));
+            all.add(Integer.toString(t.modelCalls));
+            all.add(Long.toString(t.promptTokens));
+            all.add(Long.toString(t.completionTokens));
+            all.add(rate(t.promptTokensPerSecond()));
+            all.add(rate(t.generationTokensPerSecond()));
+            all.add(Long.toString(t.cachedTokens));
+            all.add(Long.toString(t.startEpochMs));
+            all.add(Long.toString(t.endEpochMs));
+        }
+        return row(all.toArray(new String[0]));
+    }
+
+    private static String rate(double v) {
+        return v < 0 ? "" : String.format(java.util.Locale.ROOT, "%.2f", v);
     }
 
     // Highest number of identical entries (ignoring their locations) in one section.

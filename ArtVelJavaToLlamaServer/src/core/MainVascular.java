@@ -197,18 +197,46 @@ public class MainVascular {
 		System.out.println(settings.describe());
 		System.out.println();
 
-		Path outputFile = getOutputFile(scanner);
-
+		// EXPERIMENT MODE (an experiment file was given): no console prompts. A fresh run
+		// folder is created under output.base-directory (see RunRecorder) and the documents
+		// come from experiment.document-list or corpus.directory. Otherwise the original
+		// interactive behavior is unchanged.
+		final boolean experimentMode = settings.experimentMode();
+		RunRecorder recorder = null;
+		Path outputFile;
 		List<Path> documentPaths;
-		try {
-			documentPaths = getDocumentPaths(scanner);
-		} catch (IOException | IllegalArgumentException e) {
-			System.err.println("Unable to load the documents to process: " + e.getLocalizedMessage());
-			e.printStackTrace();
-			System.exit(-1);
-			return;
+		int firstPassParallel;
+		if (experimentMode) {
+			try {
+				documentPaths = settings.documentList() != null
+						? readDocumentList(settings.documentList(), settings.documentList().toAbsolutePath().getParent())
+						: getFilePaths(settings.corpusDirectory().toString(), false, settings.documentExtension());
+				if (documentPaths.isEmpty()) {
+					throw new IllegalArgumentException("No " + settings.documentExtension() + " documents found");
+				}
+				recorder = RunRecorder.create(settings, effectivePrompt(), SYSTEM_PROMPT, documentPaths);
+			} catch (IOException | IllegalArgumentException e) {
+				System.err.println("Unable to set up the experiment run: " + e.getLocalizedMessage());
+				e.printStackTrace();
+				System.exit(-1);
+				return;
+			}
+			outputFile = recorder.resultsFile();
+			firstPassParallel = settings.defaultParallel();
+			System.out.println("Experiment run " + recorder.runId() + " (" + documentPaths.size()
+					+ " documents)\nRun folder: " + recorder.runDir().toAbsolutePath() + "\n");
+		} else {
+			outputFile = getOutputFile(scanner);
+			try {
+				documentPaths = getDocumentPaths(scanner);
+			} catch (IOException | IllegalArgumentException e) {
+				System.err.println("Unable to load the documents to process: " + e.getLocalizedMessage());
+				e.printStackTrace();
+				System.exit(-1);
+				return;
+			}
+			firstPassParallel = getParallel(scanner);
 		}
-		int firstPassParallel = getParallel(scanner);
 
 		// --- Resume: skip documents already recorded in an existing output file ---
 		// Only successfully processed documents are in that file, so documents that
@@ -242,15 +270,20 @@ public class MainVascular {
 				new OutputStreamWriter(new FileOutputStream(logFile.toFile(), true), StandardCharsets.UTF_8)));
 
 		// llama-server's own console output is appended to this file.
-		Path serverLogFile = getSiblingFile(outputFile, "_server.log");
+		Path serverLogFile = experimentMode ? recorder.serverLogFile() : getSiblingFile(outputFile, "_server.log");
 
 		// --- Set up the three tab-delimited result files (append mode) ---
 		// <output>_ICA_CCA_ratio.tsv, <output>_flow_velocities.tsv, <output>_stenosis.tsv
-		VascularTsvWriter tsvWriter = new VascularTsvWriter(outputFile);
+		// In experiment mode every file also gets a run_id column (and documents.tsv gets timing and
+		// token columns).
+		VascularTsvWriter tsvWriter = new VascularTsvWriter(outputFile, experimentMode ? recorder.runId() : null);
 		tsvWriter.getFiles().forEach(f -> System.out.println("Tab-delimited results: " + f.toAbsolutePath()));
 
-		RunContext ctx = new RunContext(mapper, resultWriter, logger, tsvWriter);
+		RunContext ctx = new RunContext(mapper, resultWriter, logger, tsvWriter, recorder);
 
+		String runStatus = "ABORTED";
+		int tooLongCount = 0;
+		int notProcessedCount = 0;
 		try {
 			long beginTime = System.currentTimeMillis();
 			ctx.log("Begin processing: " + beginTime + " (" + documentPaths.size() + " documents)");
@@ -293,6 +326,9 @@ public class MainVascular {
 
 			List<Path> tooLongDocuments = aborted ? new ArrayList<>() : pending;
 			List<Path> notProcessed = aborted ? pending : new ArrayList<>();
+			runStatus = aborted ? "ABORTED" : "COMPLETED";
+			tooLongCount = tooLongDocuments.size();
+			notProcessedCount = notProcessed.size();
 
 			ctx.log("Succeeded: " + succeeded + "  Failed: " + failedDocuments.size()
 					+ "  Too long for the largest slot size used: " + tooLongDocuments.size()
@@ -320,7 +356,16 @@ public class MainVascular {
 			resultWriter.close();
 			tsvWriter.close();
 			logger.close();
+			if (recorder != null) {
+				recorder.finish(runStatus, tooLongCount, notProcessedCount);
+				System.out.println("Run folder: " + recorder.runDir().toAbsolutePath());
+			}
 		}
+	}
+
+	/** The system prompt in effect: prompt.file from the settings, or the one built into this class. */
+	static String effectivePrompt() {
+		return settings.effectivePrompt(SYSTEM_PROMPT);
 	}
 
 	// -------------------------------------------------------------------------
@@ -343,11 +388,15 @@ public class MainVascular {
 		AtomicInteger succeeded = new AtomicInteger(0);
 
 		try (LlamaServerManager server = new LlamaServerManager(config, serverLogFile)) {
+			final long startNanos = System.nanoTime();
 			server.start();
+			final double serverStartSeconds = (System.nanoTime() - startNanos) / 1e9;
+			ctx.log(String.format("Server ready after %.1f s.", serverStartSeconds));
 			final int slotSize = server.slotSize();
 
 			LlamaVascularExtractor extractor = new LlamaVascularExtractor(server.baseUrl(), settings.modelName(),
-					SYSTEM_PROMPT, slotSize, settings.requestTimeout(), settings.connectTimeout());
+					effectivePrompt(), slotSize, settings.requestTimeout(), settings.connectTimeout(),
+					settings.extractionOptions());
 			ctx.log(extractor.getBudget().describe());
 
 			final long passBegin = System.currentTimeMillis();
@@ -361,9 +410,15 @@ public class MainVascular {
 					throw new RuntimeException("Failed to serialize result for: "
 							+ result.documentPathString() + " — " + e.getMessage(), e);
 				}
+				// Timing/tokens/raw text for this document (always taken so nothing accumulates).
+				final DocumentTelemetry telemetry = extractor.takeTelemetry(result.documentPathString());
+				final boolean noFindings = result.ICA_CCA_ratio().isEmpty() && result.flow_velocities().isEmpty()
+						&& result.stenosis().isEmpty();
 				synchronized (ctx.writeLock) {
 					int current = documentNumber.incrementAndGet();
 					succeeded.incrementAndGet();
+					recordDocument(ctx, noFindings ? "SUCCESS_NO_FINDINGS" : "SUCCESS",
+							Paths.get(result.documentPathString()), telemetry, pass);
 
 					ctx.resultWriter.println(json);
 					ctx.resultWriter.println(); // blank line between records
@@ -372,7 +427,7 @@ public class MainVascular {
 					// Tab-delimited files. A failure here must not mark the document
 					// as failed (its JSON is already written), so log and continue.
 					try {
-						ctx.tsvWriter.write(result, pass, extractor.takeNotes(result.documentPathString()));
+						ctx.tsvWriter.write(result, pass, extractor.takeNotes(result.documentPathString()), telemetry);
 					} catch (Exception tsvException) {
 						String msg = "Failed to write tab-delimited rows for "
 								+ result.documentPathString() + ": " + tsvException.getMessage();
@@ -393,6 +448,7 @@ public class MainVascular {
 					ctx.logger.flush();
 				}
 			}, (path, e) -> {
+				final DocumentTelemetry telemetry = extractor.takeTelemetry(path.toString());
 				synchronized (ctx.writeLock) {
 					int current = documentNumber.incrementAndGet();
 					boolean isTooLong = e instanceof ContextBudget.DocumentTooLongException;
@@ -402,7 +458,8 @@ public class MainVascular {
 					} else {
 						failed.add(path);
 						ctx.tsvWriter.writeStatus(path.toString(), "FAILED", pass,
-								extractor.takeNotes(path.toString()), e.getMessage());
+								extractor.takeNotes(path.toString()), e.getMessage(), telemetry);
+						recordDocument(ctx, "FAILED", path, telemetry, pass);
 					}
 
 					StringBuilder sb = new StringBuilder();
@@ -420,13 +477,32 @@ public class MainVascular {
 				}
 			});
 
+			final double processingSeconds = (System.currentTimeMillis() - passBegin) / 1000.0;
 			ctx.log(String.format("Pass %d finished in %.2f min: %d succeeded, %d too long for slot size %d, %d failed.",
-					pass, (System.currentTimeMillis() - passBegin) / 60000.0,
-					succeeded.get(), tooLong.size(), slotSize, failed.size()));
+					pass, processingSeconds / 60.0, succeeded.get(), tooLong.size(), slotSize, failed.size()));
+			if (ctx.recorder != null) {
+				ctx.recorder.recordPass(pass, parallel, slotSize, serverStartSeconds, processingSeconds,
+						totalDocs, succeeded.get(), tooLong.size(), failed.size());
+			}
 			ctx.log(extractor.usageSummary());
 		} // the server is stopped here, before any next pass restarts it
 
 		return new PassResult(succeeded.get(), failed, tooLong);
+	}
+
+	// Passes the document's status, timing and raw responses to the run recorder (experiment mode).
+	// Never throws: a recording problem must not mark a document as failed.
+	private static void recordDocument(RunContext ctx, String status, Path path, DocumentTelemetry telemetry,
+			int pass) {
+		if (ctx.recorder == null) {
+			return;
+		}
+		try {
+			ctx.recorder.documentDone(status, telemetry);
+			ctx.recorder.saveRaw(path, telemetry, pass);
+		} catch (Exception e) {
+			System.err.println("Unable to record telemetry for " + path + ": " + e.getMessage());
+		}
 	}
 
 	// Shared state for a run. All console/log output and result writing goes
@@ -436,10 +512,12 @@ public class MainVascular {
 		final PrintWriter resultWriter;
 		final PrintWriter logger;
 		final VascularTsvWriter tsvWriter;
+		final RunRecorder recorder;   // null unless in experiment mode
 		final Object writeLock = new Object();
 
 		RunContext(ObjectMapper mapper, PrintWriter resultWriter, PrintWriter logger,
-				VascularTsvWriter tsvWriter) {
+				VascularTsvWriter tsvWriter, RunRecorder recorder) {
+			this.recorder = recorder;
 			this.mapper = mapper;
 			this.resultWriter = resultWriter;
 			this.logger = logger;
@@ -579,18 +657,29 @@ public class MainVascular {
 			throw new IllegalArgumentException("List file not found: " + listFile.toAbsolutePath());
 		}
 
+		List<Path> paths = readDocumentList(listFile, null);
+		System.out.println("Loaded " + paths.size() + " document paths from " + listFile.toAbsolutePath());
+		return paths;
+	}
+
+	// Reads a document list file (one path per line; blank lines and # comments ignored).
+	// A relative entry is resolved against baseDir when one is given.
+	private static List<Path> readDocumentList(Path listFile, Path baseDir) throws IOException {
 		List<Path> paths = new ArrayList<>();
 		for (String line : Files.readAllLines(listFile, StandardCharsets.UTF_8)) {
-			String trimmed = line.replace("﻿", "").trim();
+			String trimmed = line.replace("\uFEFF", "").trim();
 			if (!trimmed.isEmpty() && !trimmed.startsWith("#")) {
-				paths.add(Paths.get(stripQuotes(trimmed)));
+				Path p = Paths.get(stripQuotes(trimmed));
+				if (!p.isAbsolute() && baseDir != null) {
+					p = baseDir.resolve(p).normalize();
+				}
+				paths.add(p);
 			}
 		}
 		if (paths.isEmpty()) {
 			throw new IllegalArgumentException("The list file contains no document paths: "
 					+ listFile.toAbsolutePath());
 		}
-		System.out.println("Loaded " + paths.size() + " document paths from " + listFile.toAbsolutePath());
 		return paths;
 	}
 

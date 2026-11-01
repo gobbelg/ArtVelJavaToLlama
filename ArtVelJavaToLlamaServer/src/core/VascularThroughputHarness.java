@@ -112,8 +112,9 @@ public class VascularThroughputHarness {
                 server.start();
 
                 LlamaVascularExtractor extractor = new LlamaVascularExtractor(
-                        server.baseUrl(), settings.modelName(), MainVascular.SYSTEM_PROMPT, server.slotSize(),
-                        settings.requestTimeout(), settings.connectTimeout());
+                        server.baseUrl(), settings.modelName(), settings.effectivePrompt(MainVascular.SYSTEM_PROMPT),
+                        server.slotSize(), settings.requestTimeout(), settings.connectTimeout(),
+                        settings.extractionOptions());
 
                 if (warmUp) {
                     try {

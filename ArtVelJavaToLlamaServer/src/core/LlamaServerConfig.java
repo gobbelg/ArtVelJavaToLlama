@@ -88,6 +88,12 @@ public final class LlamaServerConfig {
 
     /** How long LlamaServerManager waits for the model to load and /health to report ready. */
     public int startupTimeoutMinutes() { return startupTimeoutMinutes; }
+    public int gpuLayers()           { return nGpuLayers; }
+    public int batchSize()           { return batchSize; }
+    public int ubatchSize()          { return ubatchSize; }
+    public int threads()             { return threads; }
+    public String flashAttn()        { return flashAttn; }
+    public boolean contBatching()    { return contBatching; }
 
     /** Tokens available to ONE request: --ctx-size divided by --parallel. */
     public int slotSize() {
