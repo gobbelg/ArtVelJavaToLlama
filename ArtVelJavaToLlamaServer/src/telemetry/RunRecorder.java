@@ -49,7 +49,7 @@ public final class RunRecorder {
             "median_latency_s", "p95_latency_s", "prompt_tokens", "completion_tokens",
             "prompt_tokens_per_s", "generation_tokens_per_s", "aggregate_generation_tokens_per_s",
             "ctx_size", "parallel_first_pass", "n_gpu_layers", "batch_size", "ubatch_size",
-            "flash_attn", "threads", "temperature", "max_tokens", "run_dir");
+            "flash_attn", "threads", "temperature", "max_tokens", "run_dir", "batch_id", "repeat_index");
 
     private final AppSettings settings;
     private final Path runDir;
@@ -60,6 +60,8 @@ public final class RunRecorder {
     private final List<Object> passes = new ArrayList<>();
     private final Object lock = new Object();
 
+    private final String batchId;      // null when not part of a batch
+    private final int repeatIndex;     // 1-based within a batch entry; 0 when not in a batch
     private final String promptSha;
     private final String corpusSha;
     private final int documentCount;
@@ -76,8 +78,13 @@ public final class RunRecorder {
     private int firstPassSlotSize = -1;
     private boolean finished;
 
+    private String summaryLine = "";
+
     private RunRecorder(AppSettings settings, Path runDir, String runId, String promptSha,
-            String corpusSha, int documentCount, String machine, long modelBytes) {
+            String corpusSha, int documentCount, String machine, long modelBytes,
+            String batchId, int repeatIndex) {
+        this.batchId = batchId;
+        this.repeatIndex = repeatIndex;
         this.settings = settings;
         this.runDir = runDir;
         this.runId = runId;
@@ -101,6 +108,17 @@ public final class RunRecorder {
      */
     public static RunRecorder create(AppSettings settings, String effectivePrompt, String builtInPrompt,
             List<Path> documents) throws IOException {
+        return create(settings, effectivePrompt, builtInPrompt, documents, null, 0);
+    }
+
+    /**
+     * As above, for a run that is part of a batch (see VascularBatchRunner).
+     *
+     * @param batchId     the batch's id, or null
+     * @param repeatIndex 1, 2, ... for repeated runs of the same experiment; 0 if not in a batch
+     */
+    public static RunRecorder create(AppSettings settings, String effectivePrompt, String builtInPrompt,
+            List<Path> documents, String batchId, int repeatIndex) throws IOException {
         Path base = settings.outputBaseDirectory();
         if (base == null) {
             throw new IllegalStateException("output.base-directory is not set");
@@ -164,7 +182,7 @@ public final class RunRecorder {
         }
 
         RunRecorder r = new RunRecorder(settings, dir, id, promptSha, corpusSha, documents.size(),
-                machine, modelBytes);
+                machine, modelBytes, batchId, repeatIndex);
         r.buildManifest(effectivePrompt, builtInPrompt, modelFile);
         r.writeManifest("RUNNING", null);
         return r;
@@ -175,6 +193,12 @@ public final class RunRecorder {
         manifest.put("label", settings.experimentLabel());
         manifest.put("notes", settings.experimentNotes());
         manifest.put("started_utc", DateTimeFormatter.ISO_INSTANT.format(started));
+        if (batchId != null) {
+            Map<String, Object> b = new LinkedHashMap<>();
+            b.put("batch_id", batchId);
+            b.put("repeat_index", repeatIndex);
+            manifest.put("batch", b);
+        }
 
         Map<String, Object> mach = new LinkedHashMap<>(HardwareInfo.describe());
         mach.put("machine_name", machine);
@@ -240,6 +264,8 @@ public final class RunRecorder {
     public String runId()        { return runId; }
     public Path resultsFile()    { return runDir.resolve("results.json"); }
     public Path serverLogFile()  { return runDir.resolve("server.log"); }
+    /** One-line result summary, available after finish() (for the batch log). */
+    public String summaryLine()  { return summaryLine; }
 
     // -------------------------------------------------------------------------
     // Recording
@@ -366,6 +392,9 @@ public final class RunRecorder {
             s.put("generation_tokens_per_second_per_request", genTps);
             s.put("aggregate_generation_tokens_per_second", aggTps);
             writeFile("summary.json", SimpleJson.write(s));
+            summaryLine = String.format(Locale.ROOT,
+                    "ok=%d failed=%d too_long=%d not_processed=%d docs/min=%s processing_min=%s",
+                    ok, failed, tooLong, notProcessed, num(perMin, 2), num(processingSeconds / 60.0, 2));
 
             manifest.put("finished_utc", DateTimeFormatter.ISO_INSTANT.format(Instant.now()));
             writeManifest(status, s);
@@ -429,6 +458,8 @@ public final class RunRecorder {
         row.add(num(o.temperature, 2));
         row.add(Integer.toString(o.maxTokens));
         row.add(runDir.toAbsolutePath().toString());
+        row.add(batchId == null ? "" : batchId);
+        row.add(repeatIndex <= 0 ? "" : Integer.toString(repeatIndex));
 
         StringBuilder line = new StringBuilder();
         for (int i = 0; i < row.size(); i++) {
@@ -440,6 +471,20 @@ public final class RunRecorder {
         line.append('\n');
         Path csv = settings.outputBaseDirectory().resolve("runs.csv");
         try {
+            // If an older runs.csv has different columns, set it aside rather than misaligning rows.
+            if (Files.exists(csv) && Files.size(csv) > 0) {
+                String first;
+                try (java.io.BufferedReader br = Files.newBufferedReader(csv, StandardCharsets.UTF_8)) {
+                    first = br.readLine();
+                }
+                if (first != null && !first.trim().equals(RUNS_CSV_HEADER)) {
+                    Path old = csv.resolveSibling("runs_before_"
+                            + DateTimeFormatter.ofPattern("yyMMdd_HHmmss").withZone(java.time.ZoneId.systemDefault())
+                                    .format(Instant.now()) + ".csv");
+                    Files.move(csv, old);
+                    System.out.println("runs.csv had different columns; renamed to " + old.getFileName());
+                }
+            }
             boolean needsHeader = !Files.exists(csv) || Files.size(csv) == 0;
             StringBuilder out = new StringBuilder();
             if (needsHeader) {

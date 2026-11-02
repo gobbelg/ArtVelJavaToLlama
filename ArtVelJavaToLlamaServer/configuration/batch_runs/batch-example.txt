@@ -1,0 +1,7 @@
+# Batch file for RUN_EXPERIMENT_BATCH.
+# One experiment .properties file per line; relative paths are relative to THIS file.
+# Add "* N" to repeat an experiment N times (each repeat gets its own run folder).
+# Blank lines and lines starting with # are ignored.
+
+experiment-baseline.properties * 2
+experiment-prompt-variant.properties

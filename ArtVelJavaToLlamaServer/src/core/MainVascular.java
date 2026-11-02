@@ -68,20 +68,53 @@ public class MainVascular {
 	// -------------------------------------------------------------------------
 
 	public static void main(String[] args) throws Exception {
-		ObjectMapper mapper = new ObjectMapper();
-
 		// One Scanner for every console prompt. It is deliberately NOT closed:
 		// closing a Scanner on System.in also closes System.in itself.
 		Scanner scanner = new Scanner(System.in);
 
 		// Settings for this computer: -Dvascular.config=..., VASCULAR_CONFIG, or a prompt.
+		AppSettings loaded;
 		try {
-			settings = AppSettings.load(scanner);
+			loaded = AppSettings.load(scanner);
 		} catch (IOException | IllegalArgumentException e) {
 			System.err.println("Unable to load the settings file: " + e.getLocalizedMessage());
 			System.exit(-1);
 			return;
 		}
+		run(loaded, scanner, null, 0);
+	}
+
+	/** How one run ended; returned by run() so a batch can log it. */
+	public static final class RunOutcome {
+		/** COMPLETED or ABORTED. */
+		public final String status;
+		/** Null for an interactive (non-experiment) run. */
+		public final String runId;
+		public final Path runDir;
+		/** One line of counts and speed, empty for an interactive run. */
+		public final String summary;
+
+		RunOutcome(String status, String runId, Path runDir, String summary) {
+			this.status = status;
+			this.runId = runId;
+			this.runDir = runDir;
+			this.summary = summary;
+		}
+	}
+
+	/**
+	 * One complete run with the given settings: interactive prompts when the settings have no
+	 * experiment file, otherwise an experiment run (no prompts; scanner may be null).
+	 * Experiment runs that cannot even be set up throw IOException; once documents are being
+	 * processed, problems are recorded in the run folder and the run returns normally.
+	 *
+	 * @param batchId     the batch this run belongs to, or null
+	 * @param repeatIndex 1, 2, ... for repeats within a batch; 0 when not in a batch
+	 */
+	public static RunOutcome run(AppSettings runSettings, Scanner scanner, String batchId, int repeatIndex)
+			throws Exception {
+		ObjectMapper mapper = new ObjectMapper();
+		settings = runSettings;
 		System.out.println(settings.describe());
 		System.out.println();
 
@@ -102,12 +135,10 @@ public class MainVascular {
 				if (documentPaths.isEmpty()) {
 					throw new IllegalArgumentException("No " + settings.documentExtension() + " documents found");
 				}
-				recorder = RunRecorder.create(settings, effectivePrompt(), VascularPrompt.SYSTEM_PROMPT, documentPaths);
+				recorder = RunRecorder.create(settings, effectivePrompt(), VascularPrompt.SYSTEM_PROMPT, documentPaths,
+						batchId, repeatIndex);
 			} catch (IOException | IllegalArgumentException e) {
-				System.err.println("Unable to set up the experiment run: " + e.getLocalizedMessage());
-				e.printStackTrace();
-				System.exit(-1);
-				return;
+				throw new IOException("Unable to set up the experiment run: " + e.getLocalizedMessage(), e);
 			}
 			outputFile = recorder.resultsFile();
 			firstPassParallel = settings.defaultParallel();
@@ -121,7 +152,7 @@ public class MainVascular {
 				System.err.println("Unable to load the documents to process: " + e.getLocalizedMessage());
 				e.printStackTrace();
 				System.exit(-1);
-				return;
+				return null;
 			}
 			firstPassParallel = getParallel(scanner);
 		}
@@ -143,29 +174,49 @@ public class MainVascular {
 						+ " documents already in the output file; " + documentPaths.size() + " to process.");
 				if (documentPaths.isEmpty()) {
 					System.out.println("Nothing to do.");
-					return;
+					return new RunOutcome("COMPLETED", null, null, "");
 				}
 			}
 		}
 
-		// --- Set up synchronized writer (append mode) ---
-		PrintWriter resultWriter = new PrintWriter(new BufferedWriter(
-				new OutputStreamWriter(new FileOutputStream(outputFile.toFile(), true), StandardCharsets.UTF_8)));
-
-		// --- Set up synchronized logger (append mode) ---
-		Path logFile = getLogFile(outputFile);
-		PrintWriter logger = new PrintWriter(new BufferedWriter(
-				new OutputStreamWriter(new FileOutputStream(logFile.toFile(), true), StandardCharsets.UTF_8)));
-
 		// llama-server's own console output is appended to this file.
 		Path serverLogFile = experimentMode ? recorder.serverLogFile() : getSiblingFile(outputFile, "_server.log");
 
-		// --- Set up the three tab-delimited result files (append mode) ---
-		// <output>_ICA_CCA_ratio.tsv, <output>_flow_velocities.tsv, <output>_stenosis.tsv
-		// In experiment mode every file also gets a run_id column (and documents.tsv gets timing and
-		// token columns).
-		VascularTsvWriter tsvWriter = new VascularTsvWriter(outputFile, experimentMode ? recorder.runId() : null);
-		tsvWriter.getFiles().forEach(f -> System.out.println("Tab-delimited results: " + f.toAbsolutePath()));
+		PrintWriter resultWriter = null;
+		PrintWriter logger = null;
+		VascularTsvWriter tsvWriter = null;
+		try {
+			// --- Set up synchronized writer (append mode) ---
+			resultWriter = new PrintWriter(new BufferedWriter(
+					new OutputStreamWriter(new FileOutputStream(outputFile.toFile(), true), StandardCharsets.UTF_8)));
+
+			// --- Set up synchronized logger (append mode) ---
+			Path logFile = getLogFile(outputFile);
+			logger = new PrintWriter(new BufferedWriter(
+					new OutputStreamWriter(new FileOutputStream(logFile.toFile(), true), StandardCharsets.UTF_8)));
+
+			// --- Set up the tab-delimited result files (append mode) ---
+			// <output>_ICA_CCA_ratio.tsv, <output>_flow_velocities.tsv, <output>_stenosis.tsv, <output>_documents.tsv
+			// In experiment mode every file also gets a run_id column (and documents.tsv gets timing and
+			// token columns).
+			tsvWriter = new VascularTsvWriter(outputFile, experimentMode ? recorder.runId() : null);
+			tsvWriter.getFiles().forEach(f -> System.out.println("Tab-delimited results: " + f.toAbsolutePath()));
+		} catch (Exception e) {
+			// Do not leave an experiment run folder stuck at status RUNNING with no runs.csv row.
+			if (resultWriter != null) {
+				resultWriter.close();
+			}
+			if (logger != null) {
+				logger.close();
+			}
+			if (tsvWriter != null) {
+				tsvWriter.close();
+			}
+			if (recorder != null) {
+				recorder.finish("ABORTED", 0, documentPaths.size());
+			}
+			throw e;
+		}
 
 		RunContext ctx = new RunContext(mapper, resultWriter, logger, tsvWriter, recorder);
 
@@ -249,6 +300,8 @@ public class MainVascular {
 				System.out.println("Run folder: " + recorder.runDir().toAbsolutePath());
 			}
 		}
+		return new RunOutcome(runStatus, recorder == null ? null : recorder.runId(),
+				recorder == null ? null : recorder.runDir(), recorder == null ? "" : recorder.summaryLine());
 	}
 
 	/** The system prompt in effect: prompt.file from the settings, or the one built into this class. */

@@ -191,8 +191,12 @@ public final class AppSettings {
         return rest.toArray(new String[0]);
     }
 
-    /** Resolves the machine file (and optional experiment file) and loads them. */
-    public static AppSettings load(Scanner console) throws IOException {
+    /**
+     * The machine settings file chosen by --config / -Dvascular.config / VASCULAR_CONFIG,
+     * else typed at the console prompt (Enter = null = built-in VA defaults).
+     * Returns null for the built-in defaults.
+     */
+    public static Path resolveMachineFile(Scanner console) {
         String path = clean(System.getProperty(CONFIG_PROPERTY));
         if (path.isEmpty()) {
             path = clean(System.getenv(CONFIG_ENV));
@@ -203,11 +207,16 @@ public final class AppSettings {
             System.out.print("Settings file: ");
             path = clean(console.nextLine());
         }
+        return path.isEmpty() ? null : Paths.get(expandHome(path));
+    }
+
+    /** Resolves the machine file (and optional experiment file) and loads them. */
+    public static AppSettings load(Scanner console) throws IOException {
+        Path machine = resolveMachineFile(console);
         String exp = clean(System.getProperty(EXPERIMENT_PROPERTY));
         if (exp.isEmpty()) {
             exp = clean(System.getenv(EXPERIMENT_ENV));
         }
-        Path machine = path.isEmpty() ? null : Paths.get(expandHome(path));
         Path experiment = exp.isEmpty() ? null : Paths.get(expandHome(exp));
         return fromFiles(machine, experiment);
     }

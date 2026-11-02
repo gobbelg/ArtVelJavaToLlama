@@ -26,6 +26,7 @@ public class VascularRunner {
 		CONVERT_JSON_TO_ARRAY,
 		IMPORT_JSON_ARRAY_TO_SQL,
 		RUN_THROUGHPUT_SWEEP,   // NEW: launch the throughput harness
+		RUN_EXPERIMENT_BATCH,   // run the experiment files listed in a batch file, no prompts
 		CANCEL;
 	  }
 	//@formatter:on
@@ -108,6 +109,21 @@ public class VascularRunner {
 								? java.util.Arrays.copyOfRange(args, 1, args.length)
 								: new String[0];
 						VascularThroughputHarness.main(forwarded);
+					} catch (Exception e) {
+						System.err.println(e.getLocalizedMessage());
+						e.printStackTrace();
+					}
+				}
+					break;
+
+				// Non-interactive: RUN_EXPERIMENT_BATCH <batch-file> [--config=<machine file>]
+				case RUN_EXPERIMENT_BATCH: {
+					try {
+						if (args.length < 2) {
+							System.err.println("Usage: RUN_EXPERIMENT_BATCH <batch-file> [--config=<machine .properties>]");
+						} else {
+							VascularBatchRunner.runBatch(Paths.get(args[1]));
+						}
 					} catch (Exception e) {
 						System.err.println(e.getLocalizedMessage());
 						e.printStackTrace();
