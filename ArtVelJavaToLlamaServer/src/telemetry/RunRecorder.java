@@ -49,7 +49,7 @@ public final class RunRecorder {
             "median_latency_s", "p95_latency_s", "prompt_tokens", "completion_tokens",
             "prompt_tokens_per_s", "generation_tokens_per_s", "aggregate_generation_tokens_per_s",
             "ctx_size", "parallel_first_pass", "n_gpu_layers", "batch_size", "ubatch_size",
-            "flash_attn", "threads", "temperature", "max_tokens", "run_dir", "batch_id", "repeat_index");
+            "flash_attn", "threads", "temperature", "max_tokens", "run_dir", "batch_id", "repeat_index", "group", "extra_args");
 
     private final AppSettings settings;
     private final Path runDir;
@@ -192,6 +192,8 @@ public final class RunRecorder {
         manifest.put("run_id", runId);
         manifest.put("label", settings.experimentLabel());
         manifest.put("notes", settings.experimentNotes());
+        manifest.put("group", settings.experimentGroup());
+        manifest.put("server_extra_args", settings.serverConfig().extraArgsText());
         manifest.put("started_utc", DateTimeFormatter.ISO_INSTANT.format(started));
         if (batchId != null) {
             Map<String, Object> b = new LinkedHashMap<>();
@@ -460,6 +462,8 @@ public final class RunRecorder {
         row.add(runDir.toAbsolutePath().toString());
         row.add(batchId == null ? "" : batchId);
         row.add(repeatIndex <= 0 ? "" : Integer.toString(repeatIndex));
+        row.add(settings.experimentGroup());
+        row.add(c.extraArgsText());
 
         StringBuilder line = new StringBuilder();
         for (int i = 0; i < row.size(); i++) {

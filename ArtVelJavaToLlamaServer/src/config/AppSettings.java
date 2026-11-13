@@ -45,7 +45,7 @@ import java.util.TreeSet;
  *
  * FILE FORMAT: one  key = value  per line. Lines starting with # or ! are comments.
  * This is NOT java.util.Properties: backslashes are NOT escape characters, so a
- * Windows path such as P:\ORD\Models\x.gguf can be pasted as-is (forward slashes
+ * Windows path such as P:\ORD_Nguyen_202206062D\Glenn\LLM_Trunk\Large_Language_Models\x.gguf can be pasted as-is (forward slashes
  * also work). Surrounding double quotes are optional. A relative path is resolved
  * against the folder containing the file that sets it; a leading ~ means the user's
  * home folder. Unknown keys produce a warning; bad or missing values are all
@@ -61,7 +61,7 @@ import java.util.TreeSet;
  *   corpus.directory  corpus.extension
  *   http.request-timeout-minutes  http.connect-timeout-seconds
  *   output.base-directory                      (required in experiment mode)
- *   experiment.label  experiment.notes  experiment.model-label
+ *   experiment.label  experiment.notes  experiment.group  experiment.model-label
  *   experiment.document-list  experiment.hash-model-file
  *   prompt.file  prompt.id
  *   sampling.temperature  sampling.top-k  sampling.top-p  sampling.repeat-penalty  sampling.seed
@@ -90,7 +90,7 @@ public final class AppSettings {
             "corpus.directory", "corpus.extension",
             "http.request-timeout-minutes", "http.connect-timeout-seconds",
             "output.base-directory",
-            "experiment.label", "experiment.notes", "experiment.model-label",
+            "experiment.label", "experiment.notes", "experiment.group", "experiment.model-label",
             "experiment.document-list", "experiment.hash-model-file",
             "prompt.file", "prompt.id",
             "sampling.temperature", "sampling.top-k", "sampling.top-p",
@@ -105,8 +105,8 @@ public final class AppSettings {
 
     /** The Xeon Silver 4310 + A2 values that used to be hard-coded. */
     private static final String VA_DEFAULTS =
-            "server.executable = P:/ORD_Nguyen_202206062D/Glenn/LlamaAppInstall_261008/llama-b11514-bin-win-cuda-12.4-x64/llama-server.exe\n"
-          + "server.model = O:/OMHSP_CONDUIT/NLP/Glenn/LLMs/Models/gemma-4-E4B-it-IQ4_NL/gemma-4-E4B-it-IQ4_NL.gguf\n"
+            "server.executable = <LLM_TRUNK>/LlamaCpp_App/LlamaCPP_For_PC_With_GPU/llama-server.exe\n"
+          + "server.model = <LLM_TRUNK>/Large_Language_Models/gemma-4-E4B-it-IQ4_NL.gguf\n"
           + "server.n-gpu-layers = 999\n"
           + "server.ctx-size = 49152\n"
           + "server.batch-size = 2048\n"
@@ -115,7 +115,7 @@ public final class AppSettings {
           + "server.threads = 12\n"
           + "server.extra-args = --load-mode mlock\n"
           + "run.default-parallel = 4\n"
-          + "corpus.directory = P:/ORD_Nguyen_202206062D/Glenn/DataAnalysis/LLMs/TestCorpus2\n";
+          + "corpus.directory = <LLM_TRUNK>/Input_Corpora/corpus_test\n";
 
     /** One setting with the file that set it (so relative paths resolve per file). */
     private static final class Entry {
@@ -167,12 +167,15 @@ public final class AppSettings {
      * Removes "--config=PATH" / "--config PATH" and "--experiment=PATH" /
      * "--experiment PATH" from the command line, storing them in the
      * vascular.config and vascular.experiment system properties, and returns the
-     * remaining arguments. Call it first in main(), before arguments are interpreted.
+     * remaining arguments. Also handles "--trunk=PATH" (see {@link TrunkLocation}), which
+     * stores the location of the LLM_Trunk folder. Call it first in main(), before arguments
+     * are interpreted.
      */
     public static String[] consumeConfigArgument(String[] args) {
         if (args == null) {
             return new String[0];
         }
+        args = TrunkLocation.consumeArguments(args);
         List<String> rest = new ArrayList<>();
         for (int i = 0; i < args.length; i++) {
             String a = args[i];
@@ -315,6 +318,7 @@ public final class AppSettings {
         Path outputBase = r.path("output.base-directory", null, false);
         String label = r.string("experiment.label", "run");
         String notes = r.string("experiment.notes", "");
+        r.string("experiment.group", "");
         String modelLabel = r.string("experiment.model-label", "");
         Path docList = r.path("experiment.document-list", null, false);
         boolean hashModel = r.bool("experiment.hash-model-file", false);
@@ -426,7 +430,7 @@ public final class AppSettings {
                 continue;
             }
             String key = line.substring(0, eq).trim();
-            String value = unquote(line.substring(eq + 1).trim());
+            String value = TrunkLocation.expand(unquote(line.substring(eq + 1).trim()));
             if (!KNOWN_KEYS.contains(key)) {
                 System.err.println("WARNING: unknown setting '" + key + "' on line " + lineNo
                         + " of " + source + " (ignored)");
@@ -495,6 +499,12 @@ public final class AppSettings {
     /** Null when no experiment file was given. */
     public String experimentFileText()     { return experimentText; }
     /** Every known key with the value in effect (after defaults), for the run manifest. */
+    /** Optional group/stage name (experiment.group) used to sort runs.csv rows; empty if unset. */
+    public String experimentGroup() {
+        String g = effectiveValues.get("experiment.group");
+        return g == null ? "" : g;
+    }
+
     public Map<String, String> effectiveValues() { return new LinkedHashMap<>(effectiveValues); }
     /** Server settings using run.default-parallel. */
     public LlamaServerConfig serverConfig(){ return serverConfig; }
@@ -579,6 +589,7 @@ public final class AppSettings {
     }
 
     private static String expandHome(String p) {
+        p = TrunkLocation.expand(p);
         if (p.equals("~") || p.startsWith("~/") || p.startsWith("~\\")) {
             return System.getProperty("user.home") + p.substring(1);
         }

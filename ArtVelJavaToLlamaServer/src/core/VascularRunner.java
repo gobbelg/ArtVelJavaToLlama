@@ -1,6 +1,7 @@
 package core;
 
 import config.AppSettings;
+import config.TrunkLocation;
 import database.VascularDbImporter;
 
 import java.io.IOException;
@@ -27,6 +28,8 @@ public class VascularRunner {
 		IMPORT_JSON_ARRAY_TO_SQL,
 		RUN_THROUGHPUT_SWEEP,   // NEW: launch the throughput harness
 		RUN_EXPERIMENT_BATCH,   // run the experiment files listed in a batch file, no prompts
+		SET_TRUNK_LOCATION,     // choose the LLM_Trunk folder (stored as a user preference), then exit
+		SHOW_TRUNK_LOCATION,    // print the stored LLM_Trunk location, then exit
 		CANCEL;
 	  }
 	//@formatter:on
@@ -37,7 +40,22 @@ public class VascularRunner {
 
 		// Removes "--config=PATH" from the arguments and records it for AppSettings
 		// (same effect as -Dvascular.config=PATH).
+		// Also removes "--trunk=PATH" and stores it as the user's LLM_Trunk location.
 		final String[] args = AppSettings.consumeConfigArgument(rawArgs);
+
+		// These two run types only deal with the stored location and must not prompt for anything else.
+		if (args.length > 0 && args[0].equals(TrunkLocation.RUN_SET)) {
+			TrunkLocation.chooseAndSave();
+			System.exit(0);
+		}
+		if (args.length > 0 && args[0].equals(TrunkLocation.RUN_SHOW)) {
+			TrunkLocation.show();
+			System.exit(0);
+		}
+
+		// Every other run needs the LLM_Trunk folder: use the stored location, or ask the user
+		// to select it (the program quits with a console message if the user cancels).
+		TrunkLocation.ensure();
 
 		SwingUtilities.invokeLater(new Runnable() {
 
@@ -57,6 +75,15 @@ public class VascularRunner {
 				switch (runType) {
 
 				case CANCEL:
+					break;
+
+				// Chosen from the menu (the program-argument forms are handled before the window opens).
+				case SET_TRUNK_LOCATION:
+					TrunkLocation.chooseAndSave();
+					break;
+
+				case SHOW_TRUNK_LOCATION:
+					TrunkLocation.show();
 					break;
 
 				case CONVERT_JSON_TO_ARRAY: {
@@ -122,7 +149,7 @@ public class VascularRunner {
 						if (args.length < 2) {
 							System.err.println("Usage: RUN_EXPERIMENT_BATCH <batch-file> [--config=<machine .properties>]");
 						} else {
-							VascularBatchRunner.runBatch(Paths.get(args[1]));
+							VascularBatchRunner.runBatch(Paths.get(TrunkLocation.expand(args[1])));
 						}
 					} catch (Exception e) {
 						System.err.println(e.getLocalizedMessage());

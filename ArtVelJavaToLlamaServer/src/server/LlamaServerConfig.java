@@ -119,6 +119,11 @@ public final class LlamaServerConfig {
     }
 
     /** The full command: executable followed by its arguments, in the original order. */
+    /** Extra command-line arguments passed through to llama-server, joined by spaces. */
+    public String extraArgsText() {
+        return String.join(" ", extraArgs);
+    }
+
     public List<String> commandLine() {
         List<String> c = new ArrayList<>();
         c.add(executable.toString());

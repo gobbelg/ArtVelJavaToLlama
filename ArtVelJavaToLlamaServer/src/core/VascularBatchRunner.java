@@ -14,6 +14,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -32,6 +33,19 @@ import java.util.regex.Pattern;
  * Every run uses the same machine file (--config / -Dvascular.config / VASCULAR_CONFIG, or the
  * built-in VA defaults) and its own fresh run folder. A run that fails is recorded (ABORTED in
  * runs.csv where a run folder exists) and the batch continues with the next run.
+ *
+ * <h3>Optional resource sampler</h3>
+ * Directive lines starting with {@code @} (before or between the experiment lines) make the batch
+ * start a resource-sampling script when the batch begins and stop it when the batch ends, so the
+ * samples cover only the batch:
+ * <pre>
+ * {@literal @}sampler = C:\path\to\sample_resources_windows.bat
+ * {@literal @}sampler-interval = 5          (seconds between samples, default 5)
+ * {@literal @}sampler-process = llama-server (process name to watch, default llama-server)
+ * </pre>
+ * The samples go to {@code batch_<id>_resources.csv} next to the status file. The script is started
+ * through cmd.exe (.bat/.cmd) or bash (.sh). Without an {@code @sampler} line nothing is sampled.
+ *
  * A status file {@code batch_<id>_status.csv} is written in the machine file's output.base-directory
  * (or next to the batch file if that is not set).
  */
@@ -55,11 +69,36 @@ public final class VascularBatchRunner {
 		}
 	}
 
+	/** Contents of a batch file: the experiment entries plus the optional sampler directives. */
+	private static final class Batch {
+		final List<Entry> entries = new ArrayList<>();
+		Path samplerScript;
+		int samplerIntervalSeconds = 5;
+		String samplerProcess = "llama-server";
+	}
+
+	private static Path resolveListedPath(String text, Path base) {
+		String line = text.trim();
+		if (line.length() >= 2 && line.startsWith("\"") && line.endsWith("\"")) {
+			line = line.substring(1, line.length() - 1);
+		}
+		line = config.TrunkLocation.expand(line);
+		if (line.equals("~") || line.startsWith("~/") || line.startsWith("~\\")) {
+			line = System.getProperty("user.home") + line.substring(1);
+		}
+		Path f = Paths.get(line);
+		if (!f.isAbsolute()) {
+			f = base.resolve(f);
+		}
+		return f.normalize();
+	}
+
 	/** Reads and validates the batch file. Throws IOException listing every problem found. */
-	static List<Entry> readBatch(Path batchFile) throws IOException {
+	private static Batch readBatch(Path batchFile) throws IOException {
 		Path base = batchFile.toAbsolutePath().getParent();
 		List<String> lines = Files.readAllLines(batchFile, StandardCharsets.UTF_8);
-		List<Entry> entries = new ArrayList<>();
+		Batch batch = new Batch();
+		List<Entry> entries = batch.entries;
 		List<String> problems = new ArrayList<>();
 		for (int i = 0; i < lines.size(); i++) {
 			String line = lines.get(i);
@@ -68,6 +107,43 @@ public final class VascularBatchRunner {
 			}
 			line = line.trim();
 			if (line.isEmpty() || line.startsWith("#")) {
+				continue;
+			}
+			if (line.startsWith("@")) {
+				int eq = line.indexOf('=');
+				if (eq < 2) {
+					problems.add("line " + (i + 1) + ": expected '@name = value'");
+					continue;
+				}
+				String name = line.substring(1, eq).trim().toLowerCase(Locale.ROOT);
+				String value = line.substring(eq + 1).trim();
+				if (name.equals("sampler")) {
+					Path f = resolveListedPath(value, base);
+					if (!Files.isRegularFile(f)) {
+						problems.add("line " + (i + 1) + ": sampler script not found: " + f);
+					} else if (f.getFileName().toString().indexOf(' ') >= 0) {
+						problems.add("line " + (i + 1) + ": the sampler script's file name must not contain spaces: " + f.getFileName());
+					} else {
+						batch.samplerScript = f;
+					}
+				} else if (name.equals("sampler-interval")) {
+					try {
+						batch.samplerIntervalSeconds = Integer.parseInt(value);
+						if (batch.samplerIntervalSeconds < 1 || batch.samplerIntervalSeconds > 3600) {
+							throw new NumberFormatException();
+						}
+					} catch (NumberFormatException nfe) {
+						problems.add("line " + (i + 1) + ": @sampler-interval must be a whole number of seconds, 1 to 3600");
+					}
+				} else if (name.equals("sampler-process")) {
+					if (value.isEmpty() || value.indexOf(' ') >= 0 || value.endsWith(".exe")) {
+						problems.add("line " + (i + 1) + ": @sampler-process must be a process name without spaces or .exe");
+					} else {
+						batch.samplerProcess = value;
+					}
+				} else {
+					problems.add("line " + (i + 1) + ": unknown directive @" + name);
+				}
 				continue;
 			}
 			int repeats = 1;
@@ -83,6 +159,7 @@ public final class VascularBatchRunner {
 			if (line.length() >= 2 && line.startsWith("\"") && line.endsWith("\"")) {
 				line = line.substring(1, line.length() - 1);
 			}
+			line = config.TrunkLocation.expand(line);
 			if (line.equals("~") || line.startsWith("~/") || line.startsWith("~\\")) {
 				line = System.getProperty("user.home") + line.substring(1);
 			}
@@ -103,7 +180,60 @@ public final class VascularBatchRunner {
 		if (!problems.isEmpty()) {
 			throw new IOException("Batch file " + batchFile + ":\n  " + String.join("\n  ", problems));
 		}
-		return entries;
+		return batch;
+	}
+
+	/**
+	 * Starts the sampler script as a child process writing to {@code out}. Returns null (after
+	 * printing a warning) if it cannot be started: a missing sampler never stops the batch.
+	 */
+	private static Process startSampler(Batch b, Path out) {
+		try {
+			String name = b.samplerScript.getFileName().toString().toLowerCase(Locale.ROOT);
+			List<String> cmd = new ArrayList<>();
+			if (name.endsWith(".bat") || name.endsWith(".cmd")) {
+				cmd.add("cmd.exe");
+				cmd.add("/c");
+				cmd.add(b.samplerScript.getFileName().toString());
+			} else if (name.endsWith(".sh")) {
+				cmd.add("/bin/bash");
+				cmd.add(b.samplerScript.getFileName().toString());
+			} else {
+				cmd.add(b.samplerScript.toString());
+			}
+			cmd.add(out.toAbsolutePath().toString());
+			cmd.add(Integer.toString(b.samplerIntervalSeconds));
+			cmd.add(b.samplerProcess);
+			ProcessBuilder pb = new ProcessBuilder(cmd);
+			pb.directory(b.samplerScript.getParent().toFile()); // so the script name needs no path
+			pb.redirectErrorStream(true);
+			pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+			Process p = pb.start();
+			System.out.println("Resource sampler started: " + b.samplerScript.getFileName() + " every "
+					+ b.samplerIntervalSeconds + " s -> " + out.toAbsolutePath());
+			return p;
+		} catch (Exception ex) {
+			System.err.println("WARNING: could not start the resource sampler (the batch continues without it): "
+					+ ex.getLocalizedMessage());
+			return null;
+		}
+	}
+
+	/** Stops the sampler and everything it started (typeperf, ping, nvidia-smi ...). */
+	private static void stopSampler(Process p) {
+		if (p == null) {
+			return;
+		}
+		try {
+			p.descendants().forEach(ProcessHandle::destroyForcibly);
+			p.destroyForcibly();
+			p.waitFor(10, TimeUnit.SECONDS);
+			System.out.println("Resource sampler stopped.");
+		} catch (InterruptedException ie) {
+			Thread.currentThread().interrupt();
+		} catch (RuntimeException ex) {
+			System.err.println("WARNING: could not stop the resource sampler cleanly: " + ex.getLocalizedMessage());
+		}
 	}
 
 	/**
@@ -111,7 +241,8 @@ public final class VascularBatchRunner {
 	 * Returns the number of runs that did not complete.
 	 */
 	public static int runBatch(Path batchFile) throws IOException {
-		List<Entry> entries = readBatch(batchFile);
+		Batch batch = readBatch(batchFile);
+		List<Entry> entries = batch.entries;
 		Path machine = AppSettings.resolveMachineFile(null); // never prompts
 
 		String batchId = DateTimeFormatter.ofPattern("yyMMdd_HHmmss").withZone(ZoneId.systemDefault())
@@ -138,8 +269,13 @@ public final class VascularBatchRunner {
 				+ " run(s). Machine settings: " + (machine == null ? "built-in VA defaults" : machine) + " ====");
 		System.out.println("Batch status file: " + statusFile.toAbsolutePath());
 
+		Process sampler = null;
+		if (batch.samplerScript != null) {
+			sampler = startSampler(batch, statusDir.resolve("batch_" + batchId + "_resources.csv"));
+		}
 		int runNumber = 0;
 		int notCompleted = 0;
+		try {
 		for (int ei = 0; ei < entries.size(); ei++) {
 			Entry e = entries.get(ei);
 			for (int rep = 1; rep <= e.repeats; rep++) {
@@ -176,6 +312,9 @@ public final class VascularBatchRunner {
 					pauseBetweenRuns();
 				}
 			}
+		}
+		} finally {
+			stopSampler(sampler);
 		}
 		System.out.println();
 		System.out.println("==== Batch " + batchId + " finished: " + (totalRuns - notCompleted) + " of " + totalRuns

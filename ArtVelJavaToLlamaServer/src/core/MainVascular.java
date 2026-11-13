@@ -662,6 +662,7 @@ public class MainVascular {
 	}
 
 	private static String stripQuotes(String s) {
+		s = config.TrunkLocation.expand(s);
 		if (s.length() >= 2 && s.startsWith("\"") && s.endsWith("\"")) {
 			return s.substring(1, s.length() - 1);
 		}
